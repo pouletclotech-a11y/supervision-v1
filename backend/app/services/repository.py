@@ -1,4 +1,5 @@
 import logging
+import pytz
 from typing import List, Dict, Optional
 from datetime import datetime, timedelta, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -43,28 +44,36 @@ class EventRepository:
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def create_import_log(self, filename: str, file_hash: str = None, provider_id: int = None) -> ImportLog:
+    async def create_import_log(self, filename: str, file_hash: str = None, provider_id: int = None, import_metadata: dict = None, raw_payload: str = None) -> ImportLog:
         log = ImportLog(
             filename=filename,
             file_hash=file_hash,
             status="PENDING",
             provider_id=provider_id,
+            import_metadata=import_metadata or {},
+            raw_payload=raw_payload,
             created_at=datetime.utcnow()
         )
         self.session.add(log)
         await self.session.flush()
         return log
 
-    async def update_import_log(self, import_id: int, status: str, events_count: int, duplicates_count: int, error_message: str = None):
+    async def update_import_log(self, import_id: int, status: str, events_count: int, duplicates_count: int, error_message: str = None, import_metadata: dict = None, raw_payload: str = None):
+        values = {
+            "status": status, 
+            "events_count": events_count, 
+            "duplicates_count": duplicates_count,
+            "error_message": error_message
+        }
+        if import_metadata:
+            values["import_metadata"] = import_metadata
+        if raw_payload:
+            values["raw_payload"] = raw_payload
+            
         stmt = (
             update(ImportLog)
             .where(ImportLog.id == import_id)
-            .values(
-                status=status, 
-                events_count=events_count, 
-                duplicates_count=duplicates_count,
-                error_message=error_message
-            )
+            .values(**values)
         )
         await self.session.execute(stmt)
 

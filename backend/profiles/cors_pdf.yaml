@@ -1,7 +1,8 @@
 profile_id: cors_pdf
 name: CORS ONLINE PDF
-name: CORS ONLINE PDF
 priority: 20
+source_timezone: Europe/Paris
+provider_code: CORS
 detection:
   extensions:
     - .pdf

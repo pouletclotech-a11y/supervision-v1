@@ -1,7 +1,10 @@
 profile_id: ypsilon_histo_excel
-name: YPSILON HISTO
-name: YPSILON HISTO (Neutral)
-priority: 15
+name: YPSILON HISTO EXCEL
+priority: 5
+source_timezone: Europe/Paris
+provider_code: SPGO
+parser_config:
+  format: HISTO
 detection:
   extensions:
     - .xls

@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import Optional, List
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Text, JSON, BigInteger, Index, UniqueConstraint
+from sqlalchemy import Column, Integer, String, DateTime, Boolean, ForeignKey, Table, Text, Float, JSON, select, func, BigInteger, Index, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 from sqlalchemy.dialects.postgresql import JSONB
@@ -78,12 +78,16 @@ class ImportLog(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     filename: Mapped[str] = mapped_column(String(255))
     file_hash: Mapped[Optional[str]] = mapped_column(String(64), index=True)
-    status: Mapped[str] = mapped_column(String(20)) # PENDING, SUCCESS, ERROR
+    status: Mapped[str] = mapped_column(String(50)) # PENDING, SUCCESS, ERROR, PROFILE_NOT_CONFIDENT
     events_count: Mapped[int] = mapped_column(Integer, default=0)
     duplicates_count: Mapped[int] = mapped_column(Integer, default=0)
     unmatched_count: Mapped[int] = mapped_column(Integer, default=0)
     adapter_name: Mapped[Optional[str]] = mapped_column(String(50), index=True)
     error_message: Mapped[Optional[str]] = mapped_column(Text)
+    
+    # Traceability (Phase 3)
+    import_metadata: Mapped[Optional[dict]] = mapped_column(JSONB, default={})
+    raw_payload: Mapped[Optional[str]] = mapped_column(Text)
     
     # Source & Archive
     archive_path: Mapped[Optional[str]] = mapped_column(Text)
@@ -99,6 +103,37 @@ class ImportLog(Base):
     provider_id: Mapped[Optional[int]] = mapped_column(ForeignKey("monitoring_providers.id"))
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+class DBIngestionProfile(Base):
+    __tablename__ = "ingestion_profiles"
+    
+    id: Mapped[int] = mapped_column(primary_key=True)
+    profile_id: Mapped[str] = mapped_column(String(50), unique=True, index=True)
+    name: Mapped[str] = mapped_column(String(100))
+    priority: Mapped[int] = mapped_column(Integer, default=0)
+    source_timezone: Mapped[str] = mapped_column(String(50), default="Europe/Paris")
+    provider_code: Mapped[Optional[str]] = mapped_column(String(50), index=True)
+    
+    # Versioning
+    version_number: Mapped[int] = mapped_column(Integer, default=1)
+    
+    # Threshold
+    confidence_threshold: Mapped[float] = mapped_column(Float, default=2.0)
+    
+    # Technical Config (JSONB)
+    detection: Mapped[dict] = mapped_column(JSONB)
+    mapping: Mapped[list] = mapped_column(JSONB)
+    parser_config: Mapped[dict] = mapped_column(JSONB, default={})
+    extraction_rules: Mapped[dict] = mapped_column(JSONB, default={})
+    normalization: Mapped[list] = mapped_column(JSONB, default={})
+    
+    # Specific options
+    excel_options: Mapped[Optional[dict]] = mapped_column(JSONB)
+    csv_options: Mapped[Optional[dict]] = mapped_column(JSONB)
+    
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 class AlertRule(Base):
     __tablename__ = "alert_rules"

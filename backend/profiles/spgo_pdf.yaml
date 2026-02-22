@@ -1,7 +1,8 @@
 profile_id: spgo_pdf
 name: SPGO PDF
-name: SPGO PDF
-priority: 20
+priority: 10
+source_timezone: Europe/Paris
+provider_code: SPGO
 detection:
   extensions:
     - .pdf

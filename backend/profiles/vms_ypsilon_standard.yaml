@@ -1,6 +1,7 @@
 profile_id: vms_ypsilon_standard
 name: YPSILON Standard (TSV)
 priority: 10
+source_timezone: Europe/Paris
 detection:
   extensions:
     - .xls

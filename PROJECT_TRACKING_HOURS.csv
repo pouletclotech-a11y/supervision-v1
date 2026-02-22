@@ -1,9 +1,12 @@
-Phase,Task,Date dbut,Date fin,Estimation heures,Temps rel,Ecart,Commentaire
-Phase 0,Audit Roadmap & Baseline,2026-02-22,2026-02-22,2,1.5,-0.5,Consolidation V2 effectue
-Phase G,Git Hygiene & VPS Prep,2026-02-21,2026-02-22,4,4,0,Phase locked
-Phase 1,Moteur Scuris (Pydantic/Hash),,,8,0,8,Planifi
-Phase 2,Alerting V3 Hardening,,,12,0,12,Planifi
-Phase 3,Matcher & Normalisation,,,6,0,6,Planifi
-Phase 4,Dploiement VPS & DevOps,,,10,0,10,Planifi
-Phase 5,Structuration SaaS (Multi-tenant),,,15,0,15,Planifi
-Phase 6,Dashboard IA & UX Design,,,20,0,20,Planifi
+Phase,Tche,Estimation,Rel,Delta,Date,Commentaire
+Priorit 0,Git Hygiene Bloquante,4,5,+1,2026-02-22,Historique purg + Push Ok
+Phase 1,Pydantic Strict Mode,2,2,0,2026-02-22,Valid
+Phase 1,Refactor event_hash,3,3,0,2026-02-22,Valid composite hash
+Phase 1,Logs structurs (run_id),2,2,0,2026-02-22,Optimis
+Phase 1,Test collision multi-tenant,1,1,0,2026-02-22,0 collision / 15k
+Phase 2,Alerting V3 Hardening,12,8,-4,2026-02-22,Valid (UTC Strategy + Tests)
+Phase 3,Matcher & Normalisation,6,0,6,,Planifi
+Phase 4,Dploiement VPS Propre,10,0,10,,Planifi
+Phase 5,Structuration SaaS,15,0,15,,Planifi
+Phase 6,Dashboard IA & Design,20,0,20,,Planifi
+Phase 7,Agent LLM Local (Futur),0,0,0,,Planifi

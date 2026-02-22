@@ -11,102 +11,104 @@ class ProfileMatcher:
     def __init__(self, manager: ProfileManager):
         self.manager = manager
 
-    def match(self, file_path: str, headers: List[str] = None, text_content: str = None) -> Optional[IngestionProfile]:
+    def match(self, file_path: str, headers: List[str] = None, text_content: str = None) -> Tuple[Optional[IngestionProfile], dict]:
         """
         Matches a file against loaded profiles using multiple criteria.
-        Returns the best matching IngestionProfile or None.
+        Returns Tuple(Best Profile or None, Match Report).
         """
         path_obj = Path(file_path)
         ext = path_obj.suffix.lower()
         filename = path_obj.name
         
         candidates: List[Tuple[float, IngestionProfile]] = []
+        match_report = {
+            "filename": filename,
+            "candidates": [],
+            "best_profile": None,
+            "best_score": 0.0,
+            "threshold_met": False
+        }
+
+        logger.info(f"--- START MATCHING for {filename} ---")
 
         for profile in self.manager.list_profiles():
-            # 1. Filtre dur par extension
+            # 1. Hard Filter by extension
             if profile.detection.extensions and ext not in profile.detection.extensions:
                 continue
             
-            # Score de base si l'extension match
+            # Base score if extension matches
             score = 1.0
+            details = [f"Extension {ext} match (+1.0)"]
             
-            # 2. Matching par pattern de nom de fichier (+5 points)
+            # 2. Filename pattern matching (+5.0)
             if profile.detection.filename_pattern:
                 if re.search(profile.detection.filename_pattern, filename, re.IGNORECASE):
                     score += 5.0
-                else:
-                    # Si un pattern est défini mais ne match pas, on peut considérer 
-                    # soit un malus, soit l'exclusion selon la sévérité voulue.
-                    # Ici on continue juste si le pattern est obligatoire.
-                    pass
-
-            # 3. Matching par headers (+1 point par header matché)
-            match_count_h = -1 # -1 means no probe provided
+                    details.append(f"Filename pattern '{profile.detection.filename_pattern}' match (+5.0)")
+            
+            # 3. Headers matching (+1.0 per header)
             if profile.detection.required_headers:
                 if headers is not None:
-                    match_count_h = 0
+                    h_matches = 0
                     for req_h in profile.detection.required_headers:
                         if any(req_h.lower() in (h or "").lower() for h in headers):
-                            match_count_h += 1
-                            score += 1.0
+                            h_matches += 1
                     
-                    if match_count_h == 0:
-                        score -= 10.0
-                else:
-                    # No probe provided, score remains neutral (1.0)
-                    pass
-
-            # 4. Matching par contenu texte (PDF/TXT) (+3 points par mot-clé)
-            match_count_t = -1 # -1 means no probe provided
+                    if h_matches > 0:
+                        score += float(h_matches)
+                        details.append(f"{h_matches}/{len(profile.detection.required_headers)} headers match (+{float(h_matches)})")
+                    else:
+                        score -= 10.0 # Heavy penalty if required headers don't match
+                        details.append("REQUIRED HEADERS MISMATCH (-10.0)")
+            
+            # 4. Text content matching (+3.0 per keyword)
             if profile.detection.required_text:
                 if text_content is not None:
-                    match_count_t = 0
+                    t_matches = 0
                     for req_txt in profile.detection.required_text:
                         if req_txt.lower() in text_content.lower():
-                            match_count_t += 1
-                            score += 3.0
+                            t_matches += 1
                     
-                    if match_count_t == 0:
-                        score -= 10.0
-                else:
-                    # No probe provided, score remains neutral (1.0)
-                    pass
+                    if t_matches > 0:
+                        score += float(t_matches * 3.0)
+                        details.append(f"{t_matches}/{len(profile.detection.required_text)} text keywords match (+{float(t_matches * 3.0)})")
+                    else:
+                        score -= 10.0 # Heavy penalty
+                        details.append("REQUIRED TEXT MISMATCH (-10.0)")
 
-            # --- MIN SCORE / CONFIDENCE GATE ---
-            # Si un profil a des contraintes (headers ou texte), on exige un signal positif (match_count > 0)
-            # pour atteindre un score de confiance (min 2.0). 
-            # Sans probe, un profil strict ne peut pas dépasser 1.0 (extension match).
-            has_constraints = bool(profile.detection.required_headers or profile.detection.required_text)
-            if has_constraints and score < 2.0:
-                continue
+            threshold = profile.confidence_threshold or 2.0
+            is_valid = score >= threshold
+            
+            cand_info = {
+                "profile_id": profile.profile_id,
+                "score": score,
+                "threshold": threshold,
+                "is_valid": is_valid,
+                "details": details
+            }
+            match_report["candidates"].append(cand_info)
+            
+            logger.info(f"Candidat: {profile.profile_id} | Score: {score:.2f} | Seuil: {threshold} | Valide: {'OK' if is_valid else 'KO'}")
 
-            if score > 0:
+            if is_valid:
                 candidates.append((score, profile))
 
         if not candidates:
-            logger.info(f"Aucun profil matché pour {filename}")
-            return None
+            logger.warning(f"AUCUN PROFIL CONFIDENT trouvé pour {filename}")
+            # Find best even if not confident for reporting
+            all_cands = sorted(match_report["candidates"], key=lambda x: x["score"], reverse=True)
+            if all_cands:
+                match_report["best_score"] = all_cands[0]["score"]
+                match_report["best_candidate_id"] = all_cands[0]["profile_id"]
+            return None, match_report
 
-        # --- TIE-BREAKING LOGIC ---
-        # 1. Trier par Score (desc)
-        # 2. Trier par Priorité (desc)
-        # 3. Trier par ID de profil (asc) pour un tie-break déterministe
-        
+        # TIE-BREAKING
         candidates.sort(key=lambda x: (-x[0], -x[1].priority, x[1].profile_id))
-        
         best_score, best_profile = candidates[0]
         
-        # Détection d'ambiguïté (si les deux meilleurs ont même score ET même priorité)
-        if len(candidates) > 1:
-            next_score, next_profile = candidates[1]
-            if best_score == next_score and best_profile.priority == next_profile.priority:
-                logger.warning(
-                    f"AMBIGUÏTÉ de matching pour {filename} : "
-                    f"'{best_profile.profile_id}' vs '{next_profile.profile_id}' "
-                    f"(Score: {best_score}, Prio: {best_profile.priority}). "
-                    f"Utilisation du premier par défaut."
-                )
-                # On pourrait retourner None (UNMATCHED) ici si on veut une règle stricte
+        match_report["best_profile"] = best_profile.profile_id
+        match_report["best_score"] = best_score
+        match_report["threshold_met"] = True
         
-        logger.debug(f"Fichier {filename} matché avec le profil '{best_profile.profile_id}' (Score: {best_score})")
-        return best_profile
+        logger.info(f"MATCH RETENU : {best_profile.profile_id} (Score: {best_score:.2f})")
+        return best_profile, match_report
