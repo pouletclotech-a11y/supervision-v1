@@ -179,8 +179,8 @@ export default function RulesPage() {
     const handleSave = async () => {
         try {
             const method = isEditing ? 'PUT' : 'POST';
-            const url = isEditing
-                ? `/alerts/rules/${editingRule.id}`
+            const url = isEditing && editingRule?.id
+                ? `/alerts/rules/${editingRule?.id}`
                 : `/alerts/rules`;
 
             // Clean up empty strings for optional fields
