@@ -1,0 +1,77 @@
+ingestion:
+  dedupe_window_seconds: 10
+  scan_interval: 5
+  pdf_debug: true
+  burst_window_seconds: 5
+
+anti_noise:
+  excluded_families: 
+    - "SMAIL"
+    - "CONNEXION_OK"
+  aggregate_bucket_seconds: 60
+
+zoning:
+  inactive_threshold_days: 90
+
+normalization:
+  stop_at_first_match: true
+  rules:
+    # 1. Mise hors service / En service (Operator actions)
+    - regex: "MISE HORS SERVICE (\\d{4}) (.*)"
+      type: "SERVICE_DISABLE"
+      severity: "WARNING"
+      extract:
+        ticket_code: 1
+        actor: 2
+
+    - regex: "MISE EN SERVICE (\\d{4}) (.*)"
+      type: "SERVICE_ENABLE"
+      severity: "INFO"
+      extract:
+        ticket_code: 1
+        actor: 2
+
+    # 2. Intrusion / Burglary (Generic)
+    - regex: "INTRUSION.*ZONE (\\d+|\\$.*)"
+      type: "BURGLARY_ALARM"
+      severity: "CRITICAL"
+      extract:
+        zone_label: 1
+
+    - regex: "ALARME INTRUSION.*"
+      type: "BURGLARY_ALARM"
+      severity: "CRITICAL"
+
+    # 3. Power Issues
+    - regex: "DEFAUT SECTEUR.*"
+      type: "AC_POWER_FAIL"
+      severity: "WARNING"
+
+    - regex: "RETOUR SECTEUR.*"
+      type: "AC_POWER_RESTORE"
+      severity: "SUCCESS"
+
+    # 4. Battery Issues
+    - regex: "DEFAUT BATTERIE.*"
+      type: "BATTERY_LOW"
+      severity: "WARNING"
+      
+    - regex: "RETOUR BATTERIE.*"
+      type: "BATTERY_RESTORE"
+      severity: "SUCCESS"
+
+    # 5. Technical / Supervised
+    - regex: "TEST.*"
+      type: "TEST_ROUTINE"
+      severity: "INFO"
+
+    - regex: "CONNEXION_OK"
+      type: "CONNECTION_OK"
+      severity: "SUCCESS"
+      
+    # 6. Fallback / Generic patterns
+    - regex: "ALARM (.*)"
+      type: "GENERIC_ALARM"
+      severity: "WARNING"
+      extract:
+        sub_type: 1

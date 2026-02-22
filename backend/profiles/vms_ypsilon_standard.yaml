@@ -1,0 +1,20 @@
+profile_id: vms_ypsilon_standard
+name: YPSILON Standard (TSV)
+priority: 10
+detection:
+  extensions:
+    - .xls
+    - .xlsx
+  required_headers:
+    - TITRE EXPORT
+mapping:
+  - source: 0
+    target: site_code
+  - source: 1
+    target: client_name
+  - source: 2
+    target: timestamp
+  - source: 3
+    target: raw_message
+excel_options:
+  use_raw_values: true

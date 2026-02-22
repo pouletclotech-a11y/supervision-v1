@@ -1,0 +1,63 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Deep Night Theme - Default */
+    
+    /* Backgrounds */
+    --background: 222 29% 6%;      /* #0B0E14 */
+    --foreground: 210 25% 93%;     /* #E6EDF3 */
+
+    --card: 217 21% 11%;           /* #161B22 */
+    --card-foreground: 210 25% 93%;
+
+    --popover: 217 21% 11%;
+    --popover-foreground: 210 25% 93%;
+
+    /* Semantic - Primary Action */
+    --primary: 210 100% 67%;       /* #58A6FF (Info Blue as Primary interaction) */
+    --primary-foreground: 0 0% 100%;
+
+    /* Semantic - Secondary */
+    --secondary: 215 14% 34%;      /* #30363D (Border/Surface-light) */
+    --secondary-foreground: 210 25% 93%;
+
+    /* Semantic - Muted */
+    --muted: 217 21% 15%;
+    --muted-foreground: 215 9% 58%; /* #8B949E */
+
+    /* Semantic - Accent */
+    --accent: 216 19% 14%;         /* Hover State */
+    --accent-foreground: 210 25% 93%;
+
+    /* Semantic - Destructive/Critical */
+    --destructive: 0 100% 65%;     /* #FF4D4D */
+    --destructive-foreground: 0 0% 100%;
+
+    /* Semantic - Warning */
+    --warning: 45 100% 51%;        /* #FFC107 */
+    --warning-foreground: 0 0% 0%;
+
+    /* Semantic - Success */
+    --success: 150 60% 45%;        /* #2EB872 */
+    --success-foreground: 0 0% 100%;
+
+    /* Borders */
+    --border: 215 14% 21%;         /* #30363D adjusted */
+    --input: 215 14% 21%;
+    --ring: 210 100% 67%;
+
+    --radius: 0.5rem;
+  }
+}
+ 
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
