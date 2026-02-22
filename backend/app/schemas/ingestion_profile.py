@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import List, Optional, Dict, Any, Union
 from pydantic import BaseModel, Field, validator
 
@@ -33,10 +34,21 @@ class IngestionProfile(BaseModel):
     profile_id: str = Field(..., description="Identifiant unique du profil")
     name: str = Field(..., description="Nom affichable")
     priority: int = Field(0, description="Priorité pour le tie-break (plus haut = prioritaire)")
+    source_timezone: str = Field("Europe/Paris", description="Fuseau horaire source (ex: Europe/Paris, Asia/Dubai)")
+    provider_code: Optional[str] = Field(None, description="Code du provider associé (ex: SPGO, CORS)")
+    
+    # Versioning (Final Condition 1)
+    version_number: int = Field(1, description="Numéro de version incrémental")
+    updated_at: Optional[datetime] = None
+    
+    # Confidence (Condition 2)
+    confidence_threshold: float = Field(2.0, description="Seuil de confiance minimum pour valider le match")
     
     detection: DetectionRules
     
-    # Options spécifiques au format
+    # Options spécifiques au format (Condition 6 - Zéro Hardcode)
+    parser_config: Dict[str, Any] = Field(default_factory=dict, description="Configuration libre pour les parsers (ex: {'excel_type': 'HISTO'})")
+    
     excel_options: Optional[ExcelOptions] = None
     csv_options: Optional[CsvOptions] = None
     

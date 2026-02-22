@@ -28,12 +28,15 @@ class NormalizedEvent(BaseModel):
     alertable_default: bool = False
     metadata: Optional[dict] = Field(default_factory=dict)
     dup_count: int = 0
+    tenant_id: str = Field(..., description="Target Tenant ID for isolation")
     
     source_file: str
     row_index: int = -1
     raw_data: Optional[str] = Field(None, description="Raw row content for debug")
     
     class Config:
+        extra = 'forbid'
+        validate_assignment = True
         json_encoders = {
             datetime: lambda v: v.isoformat()
         }

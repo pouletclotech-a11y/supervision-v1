@@ -111,9 +111,8 @@ def _get_file_probe(file_path: Path) -> tuple:
 
 async def process_ingestion_item(adapter: BaseAdapter, item: AdapterItem, redis_lock: RedisLock, redis_client, poll_run_id: str = ""):
     """
-    Refactored ingestion pipeline (Gate B1).
+    Refactored ingestion pipeline (Phase 3).
     Handles: Hash -> Lock -> Profile Match -> Parse -> DB -> Archive -> Unlock.
-    poll_run_id is propagated to all METRIC logs.
     """
     file_path = Path(item.path)
     
@@ -138,53 +137,70 @@ async def process_ingestion_item(adapter: BaseAdapter, item: AdapterItem, redis_
             # 3. Idempotence Check (SHA256 in DB)
             existing_import = await repo.get_import_by_hash(item.sha256)
             if existing_import and existing_import.status == "SUCCESS":
-                logger.info(f"[METRIC] event=import_duplicate adapter={adapter.__class__.__name__} run_id={poll_run_id} file={item.filename} sha256={item.sha256[:8]}")
+                logger.info(f"[METRIC] run_id={poll_run_id} event=import_duplicate adapter={adapter.__class__.__name__} file={item.filename} sha256={item.sha256[:8]}")
                 await adapter.ack_duplicate(item, existing_import.id)
                 return
 
-            # 4. Profile Matching (Phase R: with probe & provider resolution)
+            # Reload profiles each item to ensure DB sync (or could be once per cycle)
+            await profile_manager.load_profiles(session)
+
+            # 4. Profile Matching (Phase 3: abstraction & threshold)
             sender_email = item.metadata.get('sender_email')
             resolved_provider_id = None
             if sender_email:
-                resolved_provider_id = provider_resolver.resolve_provider(sender_email)
+                # Resolve provider agnostically if possible, or via current resolver
+                resolved_provider_id = await provider_resolver.resolve_provider(sender_email, session)
             
             headers_probe, text_probe = _get_file_probe(file_path)
-            matching_result = profile_matcher.match(file_path, headers=headers_probe, text_content=text_probe)
+            profile, match_report = profile_matcher.match(file_path, headers=headers_probe, text_content=text_probe)
             
-            if matching_result is None:
-                logger.warning(f"[METRIC] event=import_unmatched adapter={adapter.__class__.__name__} run_id={poll_run_id} file={item.filename} reason=no_profile")
-                import_log = await repo.create_import_log(item.filename, file_hash=item.sha256)
+            if profile is None:
+                logger.warning(f"[METRIC] run_id={poll_run_id} event=import_unmatched adapter={adapter.__class__.__name__} file={item.filename} status=PROFILE_NOT_CONFIDENT")
+                
+                # Traceability (Final Condition 2)
+                raw_payload_sample = ""
+                if text_probe:
+                    raw_payload_sample = text_probe
+                elif headers_probe:
+                    raw_payload_sample = "|".join(headers_probe)
+                
+                import_metadata = {
+                    "match_score": match_report.get("best_score"),
+                    "best_candidate": match_report.get("best_candidate_id"),
+                    "match_details": match_report.get("candidates")
+                }
+                
+                import_log = await repo.create_import_log(
+                    item.filename, 
+                    file_hash=item.sha256,
+                    provider_id=resolved_provider_id,
+                    import_metadata=import_metadata,
+                    raw_payload=raw_payload_sample
+                )
                 import_log.adapter_name = item.source
-                import_log.provider_id = resolved_provider_id # Populate even if unmatched
                 if hasattr(item, 'source_message_id') and item.source_message_id:
                     import_log.source_message_id = item.source_message_id
-                await repo.update_import_log(import_log.id, "UNMATCHED", 0, 0, "No profile matched")
+                
+                await repo.update_import_log(import_log.id, "PROFILE_NOT_CONFIDENT", 0, 0, "No profile reached confidence threshold")
                 await session.commit()
-                await adapter.ack_unmatched(item, "No profile matched")
+                await adapter.ack_unmatched(item, "Profile confidence too low")
                 return
 
-            profile = matching_result
-
-            logger.info(f"[{adapter.__class__.__name__}] Matched '{profile.profile_id}' for {item.filename} (Provider={resolved_provider_id})")
+            logger.info(f"[{adapter.__class__.__name__}] Match Confidence OK: '{profile.profile_id}' (Score: {match_report['best_score']})")
             
             # 5. Get Parser
             ext = file_path.suffix.lower()
-            parser = ParserFactory.get_parser(ext) # Use Factory
+            parser = ParserFactory.get_parser(ext)
             
             if not parser:
                 error_msg = f"No parser found for extension {ext}"
                 import_log = await repo.create_import_log(item.filename, file_hash=item.sha256)
-                import_log.adapter_name = item.source
-                import_log.provider_id = resolved_provider_id
-                if hasattr(item, 'source_message_id') and item.source_message_id:
-                    import_log.source_message_id = item.source_message_id
                 await repo.update_import_log(import_log.id, "ERROR", 0, 0, error_msg)
                 await session.commit()
                 await adapter.ack_error(item, error_msg)
                 return
 
             # 6. Full Processing
-            # Start official Import Log
             import_log = await repo.create_import_log(item.filename, file_hash=item.sha256)
             import_log.adapter_name = item.source
             import_log.provider_id = resolved_provider_id
@@ -192,13 +208,13 @@ async def process_ingestion_item(adapter: BaseAdapter, item: AdapterItem, redis_
                 import_log.source_message_id = item.source_message_id
             
             try:
-                # Robust Parse: Ensure it returns a list
-                parse_result = parser.parse(str(file_path))
-                if not isinstance(parse_result, list):
-                    logger.warning(f"Parser returned {type(parse_result)} instead of list. Attempting to convert.")
-                    events = list(parse_result) if hasattr(parse_result, '__iter__') else []
-                else:
-                    events = parse_result
+                # Pass parser_config (Phase 3 abstraction)
+                parse_result = parser.parse(
+                    str(file_path), 
+                    source_timezone=profile.source_timezone#,
+                    # parser_config=profile.parser_config # Parser needs update for this
+                )
+                events = parse_result if isinstance(parse_result, list) else []
 
                 logger.info(f"Extracted {len(events)} events using {parser.__class__.__name__}")
                 
@@ -211,7 +227,7 @@ async def process_ingestion_item(adapter: BaseAdapter, item: AdapterItem, redis_
                 
                 for event in events:
                     normalizer.normalize(event)
-                    await tagging_service.tag_event(event)
+                    await tagging_service.tag_event(event) # This includes site code normalization
                     is_dup = await dedup_service.is_duplicate(event)
                     if not is_dup:
                         unique_events.append(event)
@@ -222,67 +238,51 @@ async def process_ingestion_item(adapter: BaseAdapter, item: AdapterItem, redis_
                 # DB Insert
                 if unique_events:
                     await repo.create_batch(unique_events, import_id=import_log.id)
-                    # Incident Reconstruction (Atomic inside transaction)
                     try:
                         incident_service = IncidentService(session)
                         await incident_service.process_batch_incidents(import_log.id)
                     except Exception as inc_err:
                         logger.error(f"Incident reconstruction failed: {inc_err}")
 
-                # Update Status
                 await repo.update_import_log(import_log.id, "SUCCESS", len(unique_events), duplicates_count)
-
-                # 7. COMMIT COMMIT COMMIT (Critical before physical move)
                 await session.commit()
-
-                logger.info(f"[METRIC] event=import_success adapter={adapter.__class__.__name__} run_id={poll_run_id} import_id={import_log.id} file={item.filename} events={len(unique_events)} duplicates={duplicates_count}")
-
-                # 8. Physical Ack (Move to Done/Archive)
                 await adapter.ack_success(item, import_log.id)
 
             except Exception as e:
                 error_msg = f"Crash during processing: {str(e)}"
-                logger.error(f"[METRIC] event=import_error adapter={adapter.__class__.__name__} run_id={poll_run_id} file={item.filename} reason={error_msg}", exc_info=True)
+                logger.error(f"[METRIC] event=import_error adapter={adapter.__class__.__name__} run_id={poll_run_id} reason={error_msg}", exc_info=True)
                 await repo.update_import_log(import_log.id, "ERROR", 0, 0, error_msg)
                 await session.commit()
                 await adapter.ack_error(item, error_msg)
 
     except Exception as e:
-        logger.error(f"[METRIC] event=import_fatal adapter={adapter.__class__.__name__} run_id={poll_run_id} file={item.filename} reason={e}", exc_info=True)
+        logger.error(f"[METRIC] event=import_fatal run_id={poll_run_id} file={item.filename} reason={e}", exc_info=True)
     finally:
-        # 9. Release Lock
         await redis_lock.release(lock_key, lock_token)
 
 async def worker_loop():
-    logger.info("Starting Supervision Worker (Phase B1: Adapters & Locking)...")
+    logger.info("Starting Supervision Worker (Phase 3: Matcher & Normalization)...")
     redis_client = await get_redis_client()
     redis_lock = RedisLock(redis_client)
     registry = AdapterRegistry()
-    email_fetcher = EmailFetcher()
-
-    last_email_scan = 0
 
     while True:
-        # Generate a unique poll_run_id per cycle for log correlation
         poll_run_id = str(uuid.uuid4())[:8]
         t0 = time.monotonic()
         logger.info(f"[METRIC] event=poll_cycle_start run_id={poll_run_id}")
 
-        # 1. Adapter Consumption (Dropbox / Email / Local Files)
         try:
             async for adapter, item in registry.poll_all():
-                logger.info(f"[METRIC] event=item_picked adapter={item.source} run_id={poll_run_id} file={item.filename}")
                 await process_ingestion_item(adapter, item, redis_lock, redis_client, poll_run_id=poll_run_id)
         except Exception as e:
             logger.error(f"[METRIC] event=poll_cycle_error run_id={poll_run_id} reason={e}", exc_info=True)
 
         elapsed_ms = int((time.monotonic() - t0) * 1000)
         logger.info(f"[METRIC] event=poll_cycle_done run_id={poll_run_id} duration_ms={elapsed_ms}")
-
         await asyncio.sleep(5)
 
 async def main():
-    logger.info("Starting Refactored worker service...")
+    logger.info("Starting Refactored worker service (V3.1)...")
     await worker_loop()
 
 if __name__ == "__main__":

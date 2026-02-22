@@ -30,31 +30,32 @@ class DeduplicationService:
 
     def _generate_burst_key(self, event: NormalizedEvent) -> str:
         """
-        Business Key: site_code + normalized_type + zone_label + TIME_BUCKET
+        Business Key (STRICT): tenant|site|time|code|action
+        - tenant: event.tenant_id
+        - site: event.site_code
+        - time: bucket (ts / burst_window)
+        - code: event.normalized_type
+        - action: event.status
         """
-        # If normalization failed (empty type), perform simplified fallback or treat as unique per raw message content?
-        # User requested: "fallback automatique sur raw-hash" if normalized_type is empty.
-        
-        nm_type = event.normalized_type or event.event_type or "UNKNOWN"
-        z_label = event.zone_label or "GLOBAL"
+        nm_type = (event.normalized_type or event.event_type or "UNKNOWN").strip().lower()
+        status = (event.status or "INFO").strip().lower()
         
         # Bucket timestamp to create distinct burst windows
-        # Use simple integer division by window size
         ts_val = event.timestamp.timestamp()
         bucket = int(ts_val / self.burst_window)
         
-        # Unique identifier for the "Burst Group"
-        raw_str = f"{event.site_code}|{nm_type}|{z_label}|{bucket}"
+        # Format STRICT: tenant|site|time|code|action
+        raw_str = f"{event.tenant_id}|{event.site_code}|{bucket}|{nm_type}|{status}"
         h = hashlib.sha256(raw_str.encode('utf-8')).hexdigest()
         return f"burst:{h}"
 
     def _generate_raw_key(self, event: NormalizedEvent) -> str:
         """
-        Safety Key: raw_message + timestamp (rounded to 1s or 10s)
+        Safety Key: tenant|site|time|raw_message
         """
         ts_seconds = int(event.timestamp.timestamp())
-        # Round to 1s to catch immediate machine repetitions
-        raw_str = f"{event.site_code}|{event.raw_message}|{ts_seconds}"
+        # Format: tenant|site|time|raw_message
+        raw_str = f"{event.tenant_id}|{event.site_code}|{ts_seconds}|{event.raw_message}"
         h = hashlib.sha256(raw_str.encode('utf-8')).hexdigest()
         return f"raw:{h}"
 
