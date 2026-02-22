@@ -1,0 +1,16 @@
+profile_id: spgo_pdf
+name: SPGO PDF
+name: SPGO PDF
+priority: 20
+detection:
+  extensions:
+    - .pdf
+  required_text:
+    - SPGO High Tec
+mapping:
+  - source: "regex_site"
+    target: site_code
+  - source: "regex_timestamp"
+    target: timestamp
+  - source: "regex_message"
+    target: raw_message

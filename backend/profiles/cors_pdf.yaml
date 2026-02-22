@@ -1,0 +1,16 @@
+profile_id: cors_pdf
+name: CORS ONLINE PDF
+name: CORS ONLINE PDF
+priority: 20
+detection:
+  extensions:
+    - .pdf
+  required_text:
+    - CORS ONLINE
+mapping:
+  - source: "regex_site"
+    target: site_code
+  - source: "regex_timestamp"
+    target: timestamp
+  - source: "regex_message"
+    target: raw_message

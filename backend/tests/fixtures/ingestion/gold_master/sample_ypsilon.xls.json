@@ -1,0 +1,98 @@
+[
+  {
+    "timestamp": "2026-01-27T16:24:25",
+    "site_code": "12345678",
+    "secondary_code": null,
+    "client_name": "CLIENT TEST",
+    "weekday_label": null,
+    "event_type": "APPARITION ALARME",
+    "normalized_type": null,
+    "sub_type": null,
+    "raw_message": "APPARITION ALARME | ZONE 1",
+    "normalized_message": "apparition alarme zone 1",
+    "raw_code": "E123",
+    "status": "ALARM",
+    "zone_label": null,
+    "category": null,
+    "alertable_default": false,
+    "metadata": {
+      "raw_action": "APPARITION ALARME",
+      "raw_details": "ZONE 1",
+      "col_e": "E123"
+    },
+    "dup_count": 0,
+    "raw_data": "[\"\", \"\", \"27/01/2026 16:24:25\", \"APPARITION ALARME\", \"E123\", \"ZONE 1\"]"
+  },
+  {
+    "timestamp": "2026-01-27T16:25:00",
+    "site_code": "12345678",
+    "secondary_code": null,
+    "client_name": "CLIENT TEST",
+    "weekday_label": null,
+    "event_type": "DISPARITION ALARME",
+    "normalized_type": null,
+    "sub_type": null,
+    "raw_message": "DISPARITION ALARME | ZONE 1",
+    "normalized_message": "disparition alarme zone 1",
+    "raw_code": "R123",
+    "status": "INFO",
+    "zone_label": null,
+    "category": null,
+    "alertable_default": false,
+    "metadata": {
+      "raw_action": "DISPARITION ALARME",
+      "raw_details": "ZONE 1",
+      "col_e": "R123"
+    },
+    "dup_count": 0,
+    "raw_data": "[\"\", \"\", \"16:25:00\", \"DISPARITION ALARME\", \"R123\", \"ZONE 1\"]"
+  },
+  {
+    "timestamp": "2026-01-28T08:00:00",
+    "site_code": "87654321",
+    "secondary_code": null,
+    "client_name": "CLIENT2",
+    "weekday_label": null,
+    "event_type": "MISE EN SERVICE",
+    "normalized_type": null,
+    "sub_type": null,
+    "raw_message": "MISE EN SERVICE | Utilisateur 1",
+    "normalized_message": "mise en service utilisateur 1",
+    "raw_code": "E401",
+    "status": "INFO",
+    "zone_label": null,
+    "category": null,
+    "alertable_default": false,
+    "metadata": {
+      "raw_action": "MISE EN SERVICE",
+      "raw_details": "Utilisateur 1",
+      "col_e": "E401"
+    },
+    "dup_count": 0,
+    "raw_data": "[\"\", \"\", \"28/01/2026 08:00:00\", \"MISE EN SERVICE\", \"E401\", \"Utilisateur 1\"]"
+  },
+  {
+    "timestamp": "2026-01-28T08:05:00",
+    "site_code": "87654321",
+    "secondary_code": null,
+    "client_name": "CLIENT2",
+    "weekday_label": null,
+    "event_type": "TEST ROUTINE",
+    "normalized_type": null,
+    "sub_type": null,
+    "raw_message": "TEST ROUTINE",
+    "normalized_message": "test routine",
+    "raw_code": "E602",
+    "status": "INFO",
+    "zone_label": null,
+    "category": null,
+    "alertable_default": false,
+    "metadata": {
+      "raw_action": "TEST ROUTINE",
+      "raw_details": "",
+      "col_e": "E602"
+    },
+    "dup_count": 0,
+    "raw_data": "[\"\", \"\", \"08:05:00\", \"TEST ROUTINE\", \"E602\", \"\"]"
+  }
+]

@@ -1,0 +1,17 @@
+﻿# Backups / dumps
+backups/
+
+# Docker persistent data (NEVER version)
+docker/data/
+docker/data/**
+
+# Local archives / ingestion artifacts
+archive/
+dropbox_in/
+dropbox_done/
+dropbox_error/
+
+# Local repro / inspection scripts
+backend/inspect_*.py
+backend/repro_*.*
+backend/repro_dummy.*

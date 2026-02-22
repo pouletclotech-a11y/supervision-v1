@@ -1,0 +1,108 @@
+version: '3.8'
+
+services:
+  traefik:
+    image: traefik:v2.10
+    container_name: traefik
+    restart: always
+    command:
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      - "--entrypoints.web.http.redirections.entryPoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entryPoint.scheme=https"
+      - "--certificatesresolvers.myresolver.acme.tlschallenge=true"
+      - "--certificatesresolvers.myresolver.acme.email=${SSL_EMAIL}"
+      - "--certificatesresolvers.myresolver.acme.storage=/letsencrypt/acme.json"
+      - "--serverstransport.insecureskipverify=true"
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+      - "./docker/traefik/letsencrypt:/letsencrypt"
+    networks:
+      - supervision-network
+
+  db:
+    image: timescale/timescaledb:latest-pg15
+    container_name: supervision_db
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - ./docker/data/db:/var/lib/postgresql/data
+    networks:
+      - supervision-network
+
+  redis:
+    image: redis:alpine
+    container_name: supervision_redis
+    restart: always
+    networks:
+      - supervision-network
+
+  backend:
+    image: ghcr.io/${GITHUB_REPO}/backend:latest
+    container_name: supervision_backend
+    restart: always
+    environment:
+      POSTGRES_SERVER: db
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      REDIS_HOST: redis
+      SECRET_KEY: ${SECRET_KEY}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.backend.rule=Host(`${API_DOMAIN}`)"
+      - "traefik.http.routers.backend.entrypoints=websecure"
+      - "traefik.http.routers.backend.tls.certresolver=myresolver"
+      - "traefik.http.services.backend.loadbalancer.server.port=8000"
+    depends_on:
+      - db
+      - redis
+    networks:
+      - supervision-network
+
+  frontend:
+    image: ghcr.io/${GITHUB_REPO}/frontend:latest
+    container_name: supervision_frontend
+    restart: always
+    environment:
+      NEXT_PUBLIC_API_URL: https://${API_DOMAIN}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.frontend.rule=Host(`${FRONT_DOMAIN}`)"
+      - "traefik.http.routers.frontend.entrypoints=websecure"
+      - "traefik.http.routers.frontend.tls.certresolver=myresolver"
+      - "traefik.http.services.frontend.loadbalancer.server.port=3000"
+    depends_on:
+      - backend
+    networks:
+      - supervision-network
+
+  worker:
+    image: ghcr.io/${GITHUB_REPO}/backend:latest
+    container_name: supervision_worker
+    command: python -m app.ingestion.worker
+    restart: always
+    environment:
+      POSTGRES_SERVER: db
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      REDIS_HOST: redis
+    depends_on:
+      - backend
+      - db
+      - redis
+    networks:
+      - supervision-network
+
+networks:
+  supervision-network:
+    driver: bridge
