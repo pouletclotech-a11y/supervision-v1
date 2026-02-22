@@ -1,8 +1,0 @@
-{
-  "/not-found": "app/not-found.js",
-  "/admin/data-validation/page": "app/admin/data-validation/page.js",
-  "/login/page": "app/login/page.js",
-  "/settings/page": "app/settings/page.js",
-  "/admin/imports/page": "app/admin/imports/page.js",
-  "/page": "app/page.js"
-}

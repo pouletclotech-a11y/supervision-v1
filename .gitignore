@@ -21,3 +21,9 @@ backend/repro_dummy.*
 # OS
 .DS_Store
 Thumbs.db
+
+# Next build
+frontend/.next/
+
+# Runtime ingress (local only)
+backend/data/email_ingress/

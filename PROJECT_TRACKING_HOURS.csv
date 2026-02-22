@@ -1,0 +1,9 @@
+Phase,Task,Date dbut,Date fin,Estimation heures,Temps rel,Ecart,Commentaire
+Phase 0,Audit Roadmap & Baseline,2026-02-22,2026-02-22,2,1.5,-0.5,Consolidation V2 effectue
+Phase G,Git Hygiene & VPS Prep,2026-02-21,2026-02-22,4,4,0,Phase locked
+Phase 1,Moteur Scuris (Pydantic/Hash),,,8,0,8,Planifi
+Phase 2,Alerting V3 Hardening,,,12,0,12,Planifi
+Phase 3,Matcher & Normalisation,,,6,0,6,Planifi
+Phase 4,Dploiement VPS & DevOps,,,10,0,10,Planifi
+Phase 5,Structuration SaaS (Multi-tenant),,,15,0,15,Planifi
+Phase 6,Dashboard IA & UX Design,,,20,0,20,Planifi
