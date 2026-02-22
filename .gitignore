@@ -1,30 +1,14 @@
-# System
+﻿# Local archives / ingested artifacts
+archive/
+dropbox_in/
+dropbox_done/
+dropbox_error/
+
+# Local repro / inspection scripts (keep local only)
+backend/inspect_*.py
+backend/repro_*.*
+backend/repro_dummy.*
+
+# OS / tooling
 .DS_Store
 Thumbs.db
-
-# IDE
-.vscode/
-.idea/
-*.iml
-
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-venv/
-.env
-
-# Node
-node_modules/
-npm-debug.log
-yarn-error.log
-.next/
-out/
-build/
-dist/
-
-# Docker
-docker/data/
-
-# Local config
-*.local
