@@ -1,6 +1,7 @@
 import re
 import csv
 import json
+import pytz
 from datetime import datetime
 from typing import List, Optional
 from app.parsers.base import BaseParser
@@ -23,7 +24,7 @@ class ExcelParser(BaseParser):
     def supported_extensions(self) -> List[str]:
         return ['.xls']
 
-    def parse(self, file_path: str) -> List[NormalizedEvent]:
+    def parse(self, file_path: str, source_timezone: str = "UTC", parser_config: dict = None) -> List[NormalizedEvent]:
         # Check if it's a real Excel file (binary)
         is_binary = False
         try:
@@ -35,19 +36,22 @@ class ExcelParser(BaseParser):
             pass
 
         if is_binary:
-            return self._parse_real_excel(file_path)
+            return self._parse_real_excel(file_path, source_timezone, parser_config)
         else:
-            return self._parse_tsv_excel(file_path)
+            return self._parse_tsv_excel(file_path, source_timezone, parser_config)
 
-    def _parse_real_excel(self, file_path: str) -> List[NormalizedEvent]:
+    def _parse_real_excel(self, file_path: str, source_timezone: str = "UTC", parser_config: dict = None) -> List[NormalizedEvent]:
         import pandas as pd
         events = []
         try:
             df = pd.read_excel(file_path, header=None, engine='openpyxl')
             
-            # Detect format
+            # Detect format (Condition 6 - Zéro Hardcode)
             is_histo = False
-            if not df.empty and str(df.iloc[0, 0]).strip().upper() == 'YPSILON_HISTO':
+            if parser_config and parser_config.get("format") == "HISTO":
+                is_histo = True
+            elif not df.empty and str(df.iloc[0, 0]).strip().upper() == 'YPSILON_HISTO':
+                # Legacy fallback
                 is_histo = True
                 
             # Context trackers (Inheritance)
@@ -68,7 +72,7 @@ class ExcelParser(BaseParser):
                 while len(row) < 15:
                     row.append("")
                 
-                processed = self._process_row(row, row_idx, file_path, ctx_site_code, ctx_client_name, ctx_day, ctx_date, is_histo)
+                processed = self._process_row(row, row_idx, file_path, ctx_site_code, ctx_client_name, ctx_day, ctx_date, is_histo, source_timezone)
                 if processed:
                     evt, ctx_site_code, ctx_client_name, ctx_day, ctx_date = processed
                     if evt:
@@ -81,7 +85,7 @@ class ExcelParser(BaseParser):
             
         return events
 
-    def _parse_tsv_excel(self, file_path: str) -> List[NormalizedEvent]:
+    def _parse_tsv_excel(self, file_path: str, source_timezone: str = "UTC") -> List[NormalizedEvent]:
         events = []
         # Context trackers (Inheritance)
         ctx_site_code = None
@@ -101,16 +105,16 @@ class ExcelParser(BaseParser):
                 while len(clean_row) < 6:
                     clean_row.append("")
                 
-                processed = self._process_row(clean_row, row_idx, file_path, ctx_site_code, ctx_client_name, ctx_day, ctx_date, False)
+                processed = self._process_row(clean_row, row_idx, file_path, ctx_site_code, ctx_client_name, ctx_day, ctx_date, False, source_timezone)
                 if processed:
                     evt, ctx_site_code, ctx_client_name, ctx_day, ctx_date = processed
                     if evt:
                         events.append(evt)
         return events
 
-    def _process_row(self, clean_row, row_idx, file_path, ctx_site_code, ctx_client_name, ctx_day, ctx_date, is_histo=False):
+    def _process_row(self, clean_row, row_idx, file_path, ctx_site_code, ctx_client_name, ctx_day, ctx_date, is_histo=False, source_timezone="UTC"):
         if is_histo:
-            return self._process_row_histo(clean_row, row_idx, file_path, ctx_site_code, ctx_client_name, ctx_day, ctx_date)
+            return self._process_row_histo(clean_row, row_idx, file_path, ctx_site_code, ctx_client_name, ctx_day, ctx_date, source_timezone)
         
         col_a, col_b, col_c, col_d, col_e, col_f = clean_row[:6]
 
@@ -153,7 +157,7 @@ class ExcelParser(BaseParser):
             return None, ctx_site_code, ctx_client_name, ctx_day, ctx_date
         
         event = NormalizedEvent(
-            timestamp=ts,
+            timestamp=self._normalize_timestamp(ts, source_timezone),
             site_code=ctx_site_code,
             client_name=ctx_client_name,
             weekday_label=ctx_day,
@@ -164,7 +168,8 @@ class ExcelParser(BaseParser):
             status="ALARM" if "APPARITION" in action.upper() else "INFO",
             source_file=file_path,
             row_index=row_idx,
-            raw_data=json.dumps(clean_row if isinstance(clean_row, list) else [])
+            raw_data=json.dumps(clean_row if isinstance(clean_row, list) else []),
+            tenant_id="default-tenant"
         )
         
         event.metadata = {
@@ -175,7 +180,7 @@ class ExcelParser(BaseParser):
         
         return event, ctx_site_code, ctx_client_name, ctx_day, ctx_date
 
-    def _process_row_histo(self, clean_row, row_idx, file_path, ctx_site_code, ctx_client_name, ctx_day, ctx_date):
+    def _process_row_histo(self, clean_row, row_idx, file_path, ctx_site_code, ctx_client_name, ctx_day, ctx_date, source_timezone="UTC"):
         # Format YPSILON_HISTO:
         # Col 0: Site code (8 digits) OR empty
         # Col 1: Client name OR empty
@@ -213,7 +218,7 @@ class ExcelParser(BaseParser):
             return None, ctx_site_code, ctx_client_name, ctx_day, ctx_date
         
         event = NormalizedEvent(
-            timestamp=ts,
+            timestamp=self._normalize_timestamp(ts, source_timezone),
             site_code=ctx_site_code,
             client_name=ctx_client_name,
             weekday_label=None,
@@ -224,7 +229,8 @@ class ExcelParser(BaseParser):
             status="ALARM" if "APPARITION" in col_action.upper() else "INFO",
             source_file=file_path,
             row_index=row_idx,
-            raw_data=json.dumps(clean_row if isinstance(clean_row, list) else [])
+            raw_data=json.dumps(clean_row if isinstance(clean_row, list) else []),
+            tenant_id="default-tenant"
         )
 
         # In HISTO, the code might be inside the message after a '$'
@@ -237,3 +243,24 @@ class ExcelParser(BaseParser):
         event.weekday_label = days_map_fr[ts.weekday()]
 
         return event, ctx_site_code, ctx_client_name, ctx_day, ctx_date
+
+    def _normalize_timestamp(self, ts: datetime, source_timezone: str) -> datetime:
+        """
+        Converts a naive or local datetime to timezone-aware UTC.
+        """
+        if ts is None:
+            return None
+            
+        # If already aware, convert to UTC
+        if ts.tzinfo is not None:
+            return ts.astimezone(pytz.UTC)
+            
+        # If naive, localize with source_timezone then convert to UTC
+        try:
+            tz = pytz.timezone(source_timezone)
+            aware_ts = tz.localize(ts)
+            return aware_ts.astimezone(pytz.UTC)
+        except Exception:
+            # Fallback to UTC if timezone is invalid
+            aware_ts = pytz.UTC.localize(ts)
+            return aware_ts

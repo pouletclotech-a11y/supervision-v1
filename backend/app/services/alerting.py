@@ -4,7 +4,8 @@ from app.ingestion.models import NormalizedEvent
 from app.services.calendar_service import CalendarService
 from app.utils.text import normalize_text
 from app.db.models import EventRuleHit
-from datetime import datetime, time
+from app.core.config import settings
+from datetime import datetime, time, timedelta
 
 logger = logging.getLogger("alerting-engine")
 
@@ -27,8 +28,8 @@ class AlertingService:
         Used by both real triggering and Dry Run.
         """
         # 1. SETUP
-        paris_tz = pytz.timezone("Europe/Paris")
-        evt_timestamp = getattr(event, 'timestamp', None) or getattr(event, 'time', None)
+        # The base event time is ALWAYS UTC (enforced at ingestion)
+        evt_dt_utc = getattr(event, 'timestamp', None)
         
         # Override time for deterministic tests
         if reference_time_override:
@@ -38,18 +39,22 @@ class AlertingService:
             else:
                 evt_dt = reference_time_override
         else:
-            evt_dt = evt_timestamp
+            evt_dt = evt_dt_utc
 
         if evt_dt.tzinfo is None:
-            evt_dt = pytz.utc.localize(evt_dt).astimezone(paris_tz)
+            evt_dt = pytz.UTC.localize(evt_dt)
         else:
-            evt_dt = evt_dt.astimezone(paris_tz)
+            evt_dt = evt_dt.astimezone(pytz.UTC)
+
+        # Local conversion ONLY for schedule-matching (e.g. "Night", "Business Hours")
+        display_tz = pytz.timezone(settings.DEFAULT_DISPLAY_TIMEZONE)
+        evt_dt_local = evt_dt.astimezone(display_tz)
             
-        evt_date = evt_dt.date()
-        evt_time = evt_dt.time()
+        evt_date_local = evt_dt_local.date()
+        evt_time_local = evt_dt_local.time()
         
-        is_weekend = CalendarService.is_weekend(evt_date)
-        is_holiday = CalendarService.is_holiday(evt_date)
+        is_weekend = CalendarService.is_weekend(evt_date_local)
+        is_holiday = CalendarService.is_holiday(evt_date_local)
         
         report = {
             "rule_id": getattr(rule, 'id', None),
@@ -82,10 +87,10 @@ class AlertingService:
                 end_t = time(e_h, e_m)
                 
                 if start_t <= end_t:
-                    in_schedule = (start_t <= evt_time <= end_t)
+                    in_schedule = (start_t <= evt_time_local <= end_t)
                 else:
                     # Cross-midnight (ex: 18:00 -> 08:00)
-                    in_schedule = (evt_time >= start_t or evt_time <= end_t)
+                    in_schedule = (evt_time_local >= start_t or evt_time_local <= end_t)
             except Exception as e:
                 logger.error(f"Schedule error rule {getattr(rule, 'id', '?')}: {e}")
         
@@ -98,7 +103,7 @@ class AlertingService:
         elif r_time_scope == 'NIGHT':
              # Default 22:00-06-00 if no start/end
              if not (r_start and r_end):
-                 in_schedule = (evt_dt.hour >= 22 or evt_dt.hour < 6)
+                 in_schedule = (evt_dt_local.hour >= 22 or evt_dt_local.hour < 6)
              if not in_schedule: 
                  report["time_scope_ok"] = False
                  report["details"].append("Outside night hours (schedule)")

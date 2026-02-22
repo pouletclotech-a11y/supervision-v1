@@ -1,4 +1,5 @@
 import re
+import pytz
 from datetime import datetime
 from typing import List
 from app.parsers.base import BaseParser
@@ -22,7 +23,7 @@ class PdfParser(BaseParser):
     def supported_extensions(self) -> List[str]:
         return ['.pdf']
 
-    def parse(self, file_path: str) -> List[NormalizedEvent]:
+    def parse(self, file_path: str, source_timezone: str = "UTC", parser_config: dict = None) -> List[NormalizedEvent]:
         if pdfplumber is None:
             error_msg = "pdfplumber module is not installed. Impossible to parse PDF."
             logger.error(error_msg)
@@ -108,14 +109,15 @@ class PdfParser(BaseParser):
                                 # For V1 assume remainder is the Event Type/Message
                                 
                                 event = NormalizedEvent(
-                                    timestamp=ts,
+                                    timestamp=self._normalize_timestamp(ts, source_timezone),
                                     site_code=current_site_code,
                                     client_name=current_site_name,
                                     secondary_code=current_site_secondary,
                                     event_type="PDF_EVENT", # Hard to parse strict columns in PDF text
                                     raw_message=remainder,
                                     status="INFO",
-                                    source_file=file_path
+                                    source_file=file_path,
+                                    tenant_id="default-tenant"
                                 )
                                 events.append(event)
                             except ValueError:
@@ -133,7 +135,7 @@ class PdfParser(BaseParser):
                                 full_ts = datetime.combine(last_event_date.date(), t_part)
                                 
                                 sub_event = NormalizedEvent(
-                                    timestamp=full_ts,
+                                    timestamp=self._normalize_timestamp(full_ts, source_timezone),
                                     site_code=current_site_code,
                                     client_name=current_site_name,
                                     secondary_code=current_site_secondary,
@@ -141,7 +143,8 @@ class PdfParser(BaseParser):
                                     sub_type="PDF_LOG",
                                     raw_message=message,
                                     status="INFO",
-                                    source_file=file_path
+                                    source_file=file_path,
+                                    tenant_id="default-tenant"
                                 )
                                 events.append(sub_event)
                             except ValueError:
@@ -155,12 +158,13 @@ class PdfParser(BaseParser):
                     logger.warning(f"PDF WARNING: {file_path} seems empty or scanned image (Text len < 200).")
                     # Synthetic event for visibility
                     events.append(NormalizedEvent(
-                        timestamp=datetime.now(),
+                        timestamp=datetime.now(pytz.UTC),
                         site_code="SYSTEM",
                         event_type="PARSING_ERROR",
                         raw_message=f"PDF seems empty or scanned (Text len: {total_text_len}). OCR required?",
                         status="new",
-                        source_file=file_path
+                        source_file=file_path,
+                        tenant_id="default-tenant"
                     ))
                 elif len(events) == 0:
                      events.append(NormalizedEvent(
@@ -169,7 +173,8 @@ class PdfParser(BaseParser):
                         event_type="PARSING_WARNING",
                         raw_message=f"Text extracted ({total_text_len} chars) but no events matched regex patterns. Check format.",
                         status="new",
-                        source_file=file_path
+                        source_file=file_path,
+                        tenant_id="default-tenant"
                     ))
                 
                 if settings.INGESTION.get('pdf_debug', False):
@@ -185,3 +190,24 @@ class PdfParser(BaseParser):
              raise e 
             
         return events
+
+    def _normalize_timestamp(self, ts: datetime, source_timezone: str) -> datetime:
+        """
+        Converts a naive or local datetime to timezone-aware UTC.
+        """
+        if ts is None:
+            return None
+            
+        # If already aware, convert to UTC
+        if ts.tzinfo is not None:
+            return ts.astimezone(pytz.UTC)
+            
+        # If naive, localize with source_timezone then convert to UTC
+        try:
+            tz = pytz.timezone(source_timezone)
+            aware_ts = tz.localize(ts)
+            return aware_ts.astimezone(pytz.UTC)
+        except Exception:
+            # Fallback to UTC if timezone is invalid
+            aware_ts = pytz.UTC.localize(ts)
+            return aware_ts
