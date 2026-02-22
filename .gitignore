@@ -1,9 +1,11 @@
 ﻿# Backups / dumps
 backups/
+*.sql
+*.dump
+*.bak
 
 # Docker persistent data (NEVER version)
 docker/data/
-docker/data/**
 
 # Local archives / ingestion artifacts
 archive/
@@ -15,3 +17,7 @@ dropbox_error/
 backend/inspect_*.py
 backend/repro_*.*
 backend/repro_dummy.*
+
+# OS
+.DS_Store
+Thumbs.db

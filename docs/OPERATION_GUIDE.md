@@ -99,7 +99,42 @@ services:
 - **Backup** : Copiez le dossier `./data/uploads` lors de vos sauvegardes régulières.
 - **Vider le cache** : Les fichiers sont renommés avec un timestamp (`user_{id}_{timestamp}.png`), ce qui évite les problèmes de cache navigateur.
 
-## 4. KNOWN ISSUES & TROUBLESHOOTING
+## 6. Data Architecture & Persistence
+
+### Code vs. Runtime Data
+The repository follows a strict separation between application code and runtime data/backups:
+- **Git Tracked**: Code, migrations, configuration templates, and `docker/seed.sql`.
+- **Git Ignored**: `docker/data/` (Postgres/Redis volumes), `backups/`, `archive/`, `dropbox_in/`.
+
+> [!WARNING]
+> Never force-add `docker/data/` to Git. This folder contains a live Postgres instance and is platform-dependent.
+
+### Docker Volumes
+On a VPS or Production environment, data persistence is handled via Docker volumes mapped to host folders:
+- `./docker/data/db` -> Postgres storage.
+- `./archive` -> Permanent storage for ingested files.
+- `./backups` -> Local dump storage (should be symlinked to a large external drive if possible).
+
+## 7. Backup & Restore Strategy (Production)
+
+### Strategy
+1. **Database**: Daily logical dumps using `pg_dump`.
+2. **Files**: Incremental rsync of the `archive/` folder to an offsite location (e.g., S3, OVH Cloud Archive).
+
+### Restore to a fresh VPS
+1. Clone the repo.
+2. Initialize the DB structure using the seed:
+   ```bash
+   docker compose up -d db
+   docker compose exec -T db psql -U admin -d supervision < docker/seed.sql
+   ```
+3. Restore the latest data dump:
+   ```bash
+   docker compose exec -T db psql -U admin -d supervision < latest_dump.sql
+   ```
+4. Restore the `archive/` folder from backup.
+
+## 8. KNOWN ISSUES & TROUBLESHOOTING
 
 | Symptom | Cause | Solution | Lesson |
 | :--- | :--- | :--- | :--- |
