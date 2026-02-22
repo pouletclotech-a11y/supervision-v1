@@ -1,0 +1,21 @@
+profile_id: ypsilon_histo_excel
+name: YPSILON HISTO
+name: YPSILON HISTO (Neutral)
+priority: 15
+detection:
+  extensions:
+    - .xls
+    - .xlsx
+  required_headers:
+    - YPSILON_HISTO
+mapping:
+  - source: 0
+    target: site_code
+  - source: 1
+    target: client_name
+  - source: 6
+    target: timestamp
+  - source: 8
+    target: raw_message
+excel_options:
+  use_raw_values: true

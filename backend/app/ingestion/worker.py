@@ -63,6 +63,52 @@ def compute_sha256(file_path: Path) -> str:
             sha256_hash.update(byte_block)
     return sha256_hash.hexdigest()
 
+def _get_file_probe(file_path: Path) -> tuple:
+    """
+    Extracts a small sample of headers or text to help the ProfileMatcher.
+    - Excel: A1 value (first row)
+    - PDF: First page text (limit to 2000 chars)
+    """
+    ext = file_path.suffix.lower()
+    headers = None
+    text_content = None
+    
+    try:
+        if ext in ['.xls', '.xlsx']:
+            # Check if binary or TSV
+            is_binary = False
+            with open(file_path, 'rb') as f:
+                head = f.read(4)
+                if head == b'PK\x03\x04': # ZIP header for .xlsx
+                    is_binary = True
+            
+            if is_binary:
+                import pandas as pd
+                # Read only 1 row, no header assume first row is data or signal
+                df = pd.read_excel(str(file_path), nrows=1, header=None)
+                if not df.empty:
+                    headers = [str(c).strip() for c in df.iloc[0].tolist() if c is not None]
+            else:
+                import csv
+                from app.utils.text import clean_excel_value
+                with open(file_path, 'r', encoding='latin-1', errors='replace') as f:
+                    reader = csv.reader(f, delimiter='\t')
+                    first_row = next(reader, None)
+                    if first_row:
+                        headers = [clean_excel_value(c) for c in first_row if c]
+        
+        elif ext == '.pdf':
+            import pdfplumber
+            with pdfplumber.open(str(file_path)) as pdf:
+                if pdf.pages:
+                    text_content = pdf.pages[0].extract_text()
+                    if text_content:
+                        text_content = text_content[:2000]
+    except Exception as e:
+        logger.warning(f"[Probe] Failed for {file_path.name}: {e}")
+        
+    return headers, text_content
+
 async def process_ingestion_item(adapter: BaseAdapter, item: AdapterItem, redis_lock: RedisLock, redis_client, poll_run_id: str = ""):
     """
     Refactored ingestion pipeline (Gate B1).
@@ -96,14 +142,20 @@ async def process_ingestion_item(adapter: BaseAdapter, item: AdapterItem, redis_
                 await adapter.ack_duplicate(item, existing_import.id)
                 return
 
-            # 4. Profile Matching (Phase A engine)
-            # Robust Check: Avoid unpacking errors if function signature changes
-            matching_result = profile_matcher.match(file_path)
+            # 4. Profile Matching (Phase R: with probe & provider resolution)
+            sender_email = item.metadata.get('sender_email')
+            resolved_provider_id = None
+            if sender_email:
+                resolved_provider_id = provider_resolver.resolve_provider(sender_email)
+            
+            headers_probe, text_probe = _get_file_probe(file_path)
+            matching_result = profile_matcher.match(file_path, headers=headers_probe, text_content=text_probe)
             
             if matching_result is None:
                 logger.warning(f"[METRIC] event=import_unmatched adapter={adapter.__class__.__name__} run_id={poll_run_id} file={item.filename} reason=no_profile")
                 import_log = await repo.create_import_log(item.filename, file_hash=item.sha256)
                 import_log.adapter_name = item.source
+                import_log.provider_id = resolved_provider_id # Populate even if unmatched
                 if hasattr(item, 'source_message_id') and item.source_message_id:
                     import_log.source_message_id = item.source_message_id
                 await repo.update_import_log(import_log.id, "UNMATCHED", 0, 0, "No profile matched")
@@ -111,17 +163,9 @@ async def process_ingestion_item(adapter: BaseAdapter, item: AdapterItem, redis_
                 await adapter.ack_unmatched(item, "No profile matched")
                 return
 
-            # Handle both single object or tuple/list safely
-            if isinstance(matching_result, (list, tuple)):
-                profile = matching_result[0] if len(matching_result) > 0 else None
-            else:
-                profile = matching_result
+            profile = matching_result
 
-            if not profile:
-                logger.error(f"[{adapter.__class__.__name__}] Profile resolution failed for {item.filename}")
-                return
-
-            logger.info(f"[{adapter.__class__.__name__}] Matched '{profile.profile_id}' for {item.filename}")
+            logger.info(f"[{adapter.__class__.__name__}] Matched '{profile.profile_id}' for {item.filename} (Provider={resolved_provider_id})")
             
             # 5. Get Parser
             ext = file_path.suffix.lower()
@@ -131,6 +175,7 @@ async def process_ingestion_item(adapter: BaseAdapter, item: AdapterItem, redis_
                 error_msg = f"No parser found for extension {ext}"
                 import_log = await repo.create_import_log(item.filename, file_hash=item.sha256)
                 import_log.adapter_name = item.source
+                import_log.provider_id = resolved_provider_id
                 if hasattr(item, 'source_message_id') and item.source_message_id:
                     import_log.source_message_id = item.source_message_id
                 await repo.update_import_log(import_log.id, "ERROR", 0, 0, error_msg)
@@ -142,6 +187,7 @@ async def process_ingestion_item(adapter: BaseAdapter, item: AdapterItem, redis_
             # Start official Import Log
             import_log = await repo.create_import_log(item.filename, file_hash=item.sha256)
             import_log.adapter_name = item.source
+            import_log.provider_id = resolved_provider_id
             if hasattr(item, 'source_message_id') and item.source_message_id:
                 import_log.source_message_id = item.source_message_id
             

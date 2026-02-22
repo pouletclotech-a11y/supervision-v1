@@ -41,23 +41,44 @@ class ProfileMatcher:
                     pass
 
             # 3. Matching par headers (+1 point par header matché)
-            if headers and profile.detection.required_headers:
-                match_count = 0
-                for req_h in profile.detection.required_headers:
-                    if any(req_h.lower() in (h or "").lower() for h in headers):
-                        match_count += 1
-                        score += 1.0
-                
-                # Si TOUS les headers requis sont absents (et qu'il y en a de définis), 
-                # on pénalise fortement.
-                if profile.detection.required_headers and match_count == 0:
-                    score -= 10.0
+            match_count_h = -1 # -1 means no probe provided
+            if profile.detection.required_headers:
+                if headers is not None:
+                    match_count_h = 0
+                    for req_h in profile.detection.required_headers:
+                        if any(req_h.lower() in (h or "").lower() for h in headers):
+                            match_count_h += 1
+                            score += 1.0
+                    
+                    if match_count_h == 0:
+                        score -= 10.0
+                else:
+                    # No probe provided, score remains neutral (1.0)
+                    pass
 
             # 4. Matching par contenu texte (PDF/TXT) (+3 points par mot-clé)
-            if text_content and profile.detection.required_text:
-                for req_txt in profile.detection.required_text:
-                    if req_txt.lower() in text_content.lower():
-                        score += 3.0
+            match_count_t = -1 # -1 means no probe provided
+            if profile.detection.required_text:
+                if text_content is not None:
+                    match_count_t = 0
+                    for req_txt in profile.detection.required_text:
+                        if req_txt.lower() in text_content.lower():
+                            match_count_t += 1
+                            score += 3.0
+                    
+                    if match_count_t == 0:
+                        score -= 10.0
+                else:
+                    # No probe provided, score remains neutral (1.0)
+                    pass
+
+            # --- MIN SCORE / CONFIDENCE GATE ---
+            # Si un profil a des contraintes (headers ou texte), on exige un signal positif (match_count > 0)
+            # pour atteindre un score de confiance (min 2.0). 
+            # Sans probe, un profil strict ne peut pas dépasser 1.0 (extension match).
+            has_constraints = bool(profile.detection.required_headers or profile.detection.required_text)
+            if has_constraints and score < 2.0:
+                continue
 
             if score > 0:
                 candidates.append((score, profile))
