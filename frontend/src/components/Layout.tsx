@@ -27,7 +27,8 @@ import {
     Search,
     ChevronLeft,
     Users,
-    Database
+    Database,
+    Zap
 } from 'lucide-react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '../context/AuthContext';
@@ -52,6 +53,7 @@ export default function Layout({ children }: LayoutProps) {
         { text: 'Dashboard', icon: <LayoutDashboard size={20} />, path: '/' },
         { text: 'Validations', icon: <FileText size={20} />, path: '/admin/data-validation' },
         { text: 'Alerts', icon: <ShieldAlert size={20} />, path: '/admin/alerts' },
+        { text: 'Calibration', icon: <Zap size={20} />, path: '/admin/calibration', roles: ['ADMIN'] },
         { text: 'Imports', icon: <Database size={20} />, path: '/admin/imports', roles: ['ADMIN', 'OPERATOR'] },
         { text: 'Users', icon: <Users size={20} />, path: '/admin/users', roles: ['ADMIN'] },
         { text: 'Settings', icon: <Settings size={20} />, path: '/settings', roles: ['ADMIN', 'OPERATOR'] },

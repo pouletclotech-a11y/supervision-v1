@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import List, Optional, Dict, Any, Union
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, validator, ConfigDict
 
 class DetectionRules(BaseModel):
     extensions: List[str] = Field(default_factory=list, description="Extensions supportées (ex: .xls, .pdf)")
@@ -30,6 +30,7 @@ class NormalizationRule(BaseModel):
     replacement: str
 
 class IngestionProfile(BaseModel):
+    id: Optional[int] = None
     version: str = "1.0"
     profile_id: str = Field(..., description="Identifiant unique du profil")
     name: str = Field(..., description="Nom affichable")
@@ -43,6 +44,7 @@ class IngestionProfile(BaseModel):
     
     # Confidence (Condition 2)
     confidence_threshold: float = Field(2.0, description="Seuil de confiance minimum pour valider le match")
+    is_active: bool = Field(True, description="Statut du profil")
     
     detection: DetectionRules
     
@@ -61,3 +63,5 @@ class IngestionProfile(BaseModel):
         if not v.replace("_", "").isalnum():
             raise ValueError("profile_id doit être alphanumérique (underscores autorisés)")
         return v
+
+    model_config = ConfigDict(from_attributes=True)

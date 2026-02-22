@@ -136,15 +136,13 @@ export default function ImportsPage() {
                         fullWidth
                         placeholder="Search by filename or Message-ID..."
                         value={search}
-                        onChange={(e) => setSearch(e.target.value)}
-                        slotProps={{
-                            input: {
-                                startAdornment: (
-                                    <InputAdornment position="start">
-                                        <Search size={20} />
-                                    </InputAdornment>
-                                ),
-                            }
+                        onChange={(e: any) => setSearch(e.target.value)}
+                        InputProps={{
+                            startAdornment: (
+                                <InputAdornment position="start">
+                                    <Search size={20} />
+                                </InputAdornment>
+                            ),
                         }}
                     />
                 </Paper>
@@ -169,7 +167,7 @@ export default function ImportsPage() {
                                         <CircularProgress size={40} />
                                     </TableCell>
                                 </TableRow>
-                            ) : imports.map((imp) => (
+                            ) : imports.map((imp: any) => (
                                 <TableRow key={imp.id} hover>
                                     <TableCell>{new Date(imp.created_at).toLocaleString()}</TableCell>
                                     <TableCell sx={{ fontWeight: 500 }}>{imp.filename}</TableCell>
@@ -206,9 +204,9 @@ export default function ImportsPage() {
                         component="div"
                         count={total}
                         page={page}
-                        onPageChange={(e, newPage) => setPage(newPage)}
+                        onPageChange={(e: any, newPage: number) => setPage(newPage)}
                         rowsPerPage={rowsPerPage}
-                        onRowsPerPageChange={(e) => setRowsPerPage(parseInt(e.target.value, 10))}
+                        onRowsPerPageChange={(e: any) => setRowsPerPage(parseInt(e.target.value, 10))}
                     />
                 </TableContainer>
 

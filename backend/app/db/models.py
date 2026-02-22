@@ -256,6 +256,10 @@ class SiteConnection(Base):
     first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     first_import_id: Mapped[Optional[int]] = mapped_column(Integer)
     
+    # Phase 2.A: Business Metrics
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    total_events: Mapped[int] = mapped_column(Integer, default=0)
+    
     __table_args__ = (
         Index('ix_site_connection_unique', 'provider_id', 'code_site', unique=True),
     )
@@ -312,3 +316,38 @@ class EmailBookmark(Base):
     folder: Mapped[str] = mapped_column(String(100), index=True, unique=True)
     last_uid: Mapped[int] = mapped_column(BigInteger, default=0)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+# --- Phase 3 BIS : Admin Calibration Tool ---
+
+class AuditLog(Base):
+    __tablename__ = "audit_logs"
+    
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    action: Mapped[str] = mapped_column(String(100)) # e.g., "CREATE_PROFILE", "REPROCESS"
+    target_type: Mapped[str] = mapped_column(String(50)) # e.g., "PROFILE", "IMPORT"
+    target_id: Mapped[Optional[str]] = mapped_column(String(50))
+    payload: Mapped[Optional[dict]] = mapped_column(JSONB)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+class ProfileRevision(Base):
+    __tablename__ = "profile_revisions"
+    
+    id: Mapped[int] = mapped_column(primary_key=True)
+    profile_id: Mapped[int] = mapped_column(ForeignKey("ingestion_profiles.id", ondelete="CASCADE"))
+    version_number: Mapped[int] = mapped_column(Integer)
+    profile_data: Mapped[dict] = mapped_column(JSONB)
+    change_reason: Mapped[Optional[str]] = mapped_column(Text)
+    updated_by: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+class ReprocessJob(Base):
+    __tablename__ = "reprocess_jobs"
+    
+    id: Mapped[int] = mapped_column(primary_key=True)
+    status: Mapped[str] = mapped_column(String(20), default='PENDING') # PENDING, RUNNING, SUCCESS, FAILED
+    scope: Mapped[dict] = mapped_column(JSONB) # {import_id: 1} or {range: [start, end], tenant_id: 2}
+    audit_log_id: Mapped[int] = mapped_column(ForeignKey("audit_logs.id"))
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    ended_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    error_message: Mapped[Optional[str]] = mapped_column(Text)

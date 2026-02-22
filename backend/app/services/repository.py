@@ -5,7 +5,10 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, update, func
 from sqlalchemy.dialects.postgresql import insert
-from app.db.models import Event, Site, ImportLog, AlertRule, EventRuleHit, SiteConnection, RuleCondition
+from app.db.models import (
+    Event, Site, ImportLog, AlertRule, EventRuleHit, SiteConnection, 
+    RuleCondition, AuditLog, ProfileRevision, ReprocessJob, DBIngestionProfile
+)
 from app.ingestion.models import NormalizedEvent
 
 logger = logging.getLogger("db-repository")
@@ -45,13 +48,18 @@ class EventRepository:
         return result.scalar_one_or_none()
 
     async def create_import_log(self, filename: str, file_hash: str = None, provider_id: int = None, import_metadata: dict = None, raw_payload: str = None) -> ImportLog:
+        # User requested 8-32KB truncation
+        truncated_payload = None
+        if raw_payload:
+            truncated_payload = raw_payload[:32768] # 32KB max
+            
         log = ImportLog(
             filename=filename,
             file_hash=file_hash,
             status="PENDING",
             provider_id=provider_id,
             import_metadata=import_metadata or {},
-            raw_payload=raw_payload,
+            raw_payload=truncated_payload,
             created_at=datetime.utcnow()
         )
         self.session.add(log)
@@ -68,7 +76,7 @@ class EventRepository:
         if import_metadata:
             values["import_metadata"] = import_metadata
         if raw_payload:
-            values["raw_payload"] = raw_payload
+            values["raw_payload"] = raw_payload[:32768] # 32KB max
             
         stmt = (
             update(ImportLog)
@@ -358,3 +366,139 @@ class EventRepository:
         
         logger.info(f"Populated site_connections: {added} new, {len(site_map) - added} existing (provider={provider_id})")
         return added
+
+class AdminRepository:
+    def __init__(self, session: AsyncSession):
+        self.session = session
+
+    async def get_unmatched_imports(self, skip: int = 0, limit: int = 20, status: Optional[str] = None) -> List[ImportLog]:
+        error_statuses = ["PROFILE_NOT_CONFIDENT", "NO_PROFILE_MATCH", "PARSER_FAILED", "VALIDATION_REJECTED", "ERROR"]
+        
+        stmt = select(ImportLog)
+        if status:
+            stmt = stmt.where(ImportLog.status == status)
+        else:
+            stmt = stmt.where(ImportLog.status.in_(error_statuses))
+            
+        stmt = stmt.order_by(ImportLog.created_at.desc()).offset(skip).limit(limit)
+        result = await self.session.execute(stmt)
+        return result.scalars().all()
+
+    async def create_audit_log(self, user_id: int, action: str, target_type: str, target_id: str = None, payload: dict = None) -> AuditLog:
+        log = AuditLog(
+            user_id=user_id,
+            action=action,
+            target_type=target_type,
+            target_id=target_id,
+            payload=payload
+        )
+        self.session.add(log)
+        await self.session.flush()
+        return log
+
+    async def create_profile_revision(self, profile_id: int, version: int, data: dict, user_id: int, reason: str = None) -> ProfileRevision:
+        rev = ProfileRevision(
+            profile_id=profile_id,
+            version_number=version,
+            profile_data=data,
+            change_reason=reason,
+            updated_by=user_id
+        )
+        self.session.add(rev)
+        return rev
+
+    async def create_reprocess_job(self, scope: dict, audit_log_id: int) -> ReprocessJob:
+        job = ReprocessJob(
+            status="PENDING",
+            scope=scope,
+            audit_log_id=audit_log_id
+        )
+        self.session.add(job)
+        await self.session.flush()
+        return job
+
+    async def update_reprocess_job(self, job_id: int, status: str, error_message: str = None):
+        values = {"status": status}
+        if status in ["SUCCESS", "FAILED"]:
+            values["ended_at"] = datetime.utcnow()
+        if error_message:
+            values["error_message"] = error_message
+            
+        stmt = update(ReprocessJob).where(ReprocessJob.id == job_id).values(**values)
+        await self.session.execute(stmt)
+
+    async def delete_import_data(self, import_id: int):
+        """
+        Purges all data related to an import (Events, Rule Hits, Incidents) 
+        and resets the ImportLog for reprocessing.
+        """
+        from sqlalchemy import delete
+        from app.db.models import Incident, Event, EventRuleHit, ImportLog
+        
+        # 1. Delete EventRuleHit
+        hit_stmt = delete(EventRuleHit).where(EventRuleHit.event_id.in_(
+            select(Event.id).where(Event.import_id == import_id)
+        ))
+        await self.session.execute(hit_stmt)
+        
+        # 2. Delete Incidents
+        # We delete incidents where either open or close event belongs to this import
+        inc_stmt = delete(Incident).where((Incident.open_event_id.in_(
+            select(Event.id).where(Event.import_id == import_id)
+        )) | (Incident.close_event_id.in_(
+            select(Event.id).where(Event.import_id == import_id)
+        )))
+        await self.session.execute(inc_stmt)
+
+        # 3. Delete Events
+        evt_stmt = delete(Event).where(Event.import_id == import_id)
+        await self.session.execute(evt_stmt)
+        
+        log_stmt = update(ImportLog).where(ImportLog.id == import_id).values(
+            status="PENDING",
+            events_count=0,
+            duplicates_count=0,
+            unmatched_count=0,
+            error_message=None
+        )
+        await self.session.execute(log_stmt)
+
+    async def upsert_site_connection(self, provider_id: int, code_site: str, client_name: str, seen_at: datetime):
+        """
+        Idempotent upsert for SiteConnection. Increment total_events and update last_seen_at.
+        First_seen_at is preserved automatically by the server_default or NOT being in the update.
+        """
+        # PostgreSQL specific UPSERT
+        stmt = insert(SiteConnection).values(
+            provider_id=provider_id,
+            code_site=code_site,
+            client_name=client_name,
+            first_seen_at=seen_at,
+            last_seen_at=seen_at,
+            total_events=1
+        )
+        
+        stmt = stmt.on_conflict_do_update(
+            index_elements=['provider_id', 'code_site'],
+            set_={
+                "last_seen_at": seen_at,
+                "total_events": SiteConnection.total_events + 1,
+                "client_name": client_name # Update name if it changed
+            }
+        )
+        await self.session.execute(stmt)
+
+    async def get_business_summary(self):
+        """Totals by provider"""
+        stmt = (
+            select(
+                MonitoringProvider.label,
+                MonitoringProvider.code,
+                func.count(SiteConnection.id).label("total_sites"),
+                func.sum(SiteConnection.total_events).label("total_events")
+            )
+            .join(SiteConnection, MonitoringProvider.id == SiteConnection.provider_id, isouter=True)
+            .group_by(MonitoringProvider.id)
+        )
+        result = await self.session.execute(stmt)
+        return result.all()

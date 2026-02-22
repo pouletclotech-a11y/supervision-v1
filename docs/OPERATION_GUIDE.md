@@ -1,5 +1,71 @@
 # Operation Guide
 
+> [!NOTE]
+> **Dernière mise à jour** : 2026-02-22 — Phase 2.A terminée. Backend opérationnel.
+
+---
+
+## 0. Commandes Essentielles (État Système)
+
+```bash
+# État des containers
+docker compose ps
+
+# Logs worker (ingestion en cours)
+docker logs -n 50 supervision_worker
+
+# Logs backend (API)
+docker logs -n 50 supervision_backend
+
+# Compter les événements en DB
+docker compose exec db psql -U admin -d supervision -c "SELECT COUNT(*) FROM events;"
+
+# Compter les raccordements par provider
+docker compose exec db psql -U admin -d supervision -c \
+  "SELECT p.code, COUNT(s.id) AS sites FROM monitoring_providers p LEFT JOIN site_connections s ON p.id = s.provider_id GROUP BY p.code;"
+
+# État des imports
+docker compose exec db psql -U admin -d supervision -c \
+  "SELECT status, COUNT(*) FROM imports GROUP BY status;"
+```
+
+---
+
+## 0.B Procédure d'Ingestion Manuelle
+
+> [!IMPORTANT]
+> Suivre ces étapes dans l'ordre pour valider une ingestion end-to-end.
+
+1. **Déposer le fichier** dans le répertoire d'ingress :
+   - Via Dropbox : copier le `.xls` dans `./dropbox_in/`
+   - Via IMAP : envoyer l'email avec pièce jointe à l'adresse configurée
+
+2. **Vérifier que l'import est traité** :
+   ```bash
+   docker logs -f supervision_worker 2>&1 | grep -E "SUCCESS|ERROR|import_"
+   ```
+   Attendre le message : `event=import_complete status=SUCCESS`
+
+3. **Contrôler les événements insérés** :
+   ```bash
+   docker compose exec db psql -U admin -d supervision -c "SELECT COUNT(*) FROM events;"
+   ```
+   Résultat attendu : `> 0`
+
+4. **Vérifier l'incrémentation des raccordements** :
+   ```bash
+   docker compose exec db psql -U admin -d supervision -c \
+     "SELECT code_site, total_events, last_seen_at FROM site_connections ORDER BY last_seen_at DESC LIMIT 10;"
+   ```
+
+5. **Valider la classification du provider** :
+   ```bash
+   docker compose exec db psql -U admin -d supervision -c \
+     "SELECT p.code, i.id, i.status FROM imports i JOIN monitoring_providers p ON i.provider_id = p.id ORDER BY i.created_at DESC LIMIT 5;"
+   ```
+
+---
+
 ## 1. Deployment & Lifecycle
 
 ### Start Stack
@@ -49,10 +115,11 @@ docker exec -i supervision_db psql -U admin -d supervision < backend/migrations/
 
 ## 3. User Management (V2)
 
-### Create First Admin
+### Create First Admin (Deterministic Seed)
 ```bash
-docker compose exec backend python create_admin.py admin@example.com MySecr3t
+docker compose exec backend python create_admin.py --email admin@supervision.local --password SuperSecurePassword123
 ```
+Cette commande est idempotente : elle crée l'utilisateur s'il n'existe pas, ou met à jour son mot de passe s'il existe déjà.
 
 ### Reset Password
 Simply run the `create_admin.py` script again with the same email and new password. The script handles updates idempotently.
@@ -144,3 +211,73 @@ On a VPS or Production environment, data persistence is handled via Docker volum
 | **100% Events Marked Duplicate** | Deduplication used `time.time()` (Processing Time) vs `event.timestamp`. | Changed Dedupe key to use Event Timestamp Bucket. | Idempotence must rely on deterministic data, not processing time. |
 | **UI: Zebra Striping Broken** | Default MUI CSS specificity was higher than custom class. | Used `sx` prop or `!important` utility classes correctly. | Ensure custom theme classes have sufficient specificity. |
 | **Site Code contains "C-"** | Raw data often has prefixes (e.g., `C-69000`). | added Regex `\D` replacement in Normalizer. | Always sanitize identifiers (Digits Only) before storage. |
+
+---
+
+## Roadmap 2.A — Business Metrics Layer
+
+### Aperçu
+La Phase 2.A ajoute le comptage automatique des raccordements (codes site distincts) par télésurveilleur, avec classification SMTP dynamique.
+
+### Migrations SQL (ordre d'exécution)
+
+```powershell
+# 1. Enrichissement de site_connections (last_seen_at, total_events)
+Get-Content backend/migrations/17_business_counter_updates.sql | docker exec -i supervision_db psql -U admin -d supervision
+
+# 2. Seed des providers génériques
+Get-Content backend/migrations/18_seed_providers.sql | docker exec -i supervision_db psql -U admin -d supervision
+```
+
+> [!IMPORTANT]
+> Ces migrations sont **strictement non-destructives** (`ADD COLUMN IF NOT EXISTS`, `ON CONFLICT DO NOTHING/UPDATE`). Elles peuvent être rejouées sans risque.
+
+### Commandes de maintenance
+
+```bash
+# Lister les providers actifs
+docker exec supervision_db psql -U admin -d supervision -c "SELECT code, label FROM monitoring_providers WHERE is_active = true;"
+
+# Voir les règles SMTP actives (par priorité)
+docker exec supervision_db psql -U admin -d supervision -c "SELECT p.code, r.match_type, r.match_value, r.priority FROM smtp_provider_rules r JOIN monitoring_providers p ON r.provider_id = p.id WHERE r.is_active = true ORDER BY r.priority;"
+
+# Contrôle des compteurs de raccordements
+docker exec supervision_db psql -U admin -d supervision -c "SELECT p.code, count(s.id) AS sites, sum(s.total_events) AS events FROM monitoring_providers p LEFT JOIN site_connections s ON p.id = s.provider_id GROUP BY p.code;"
+```
+
+### Ajouter une règle de classification SMTP
+
+```bash
+# Exemple : tous les emails du domaine @example.org → PROVIDER_ALPHA
+docker exec supervision_db psql -U admin -d supervision -c "
+INSERT INTO smtp_provider_rules (provider_id, match_type, match_value, priority, is_active)
+SELECT id, 'DOMAIN', 'example.org', 15, true
+FROM monitoring_providers WHERE code = 'PROVIDER_ALPHA'
+ON CONFLICT DO NOTHING;"
+```
+
+### API Endpoints Business
+
+| Méthode | URL | Description |
+|---|---|---|
+| `GET` | `/api/v1/admin/business/summary` | Totaux par provider |
+| `GET` | `/api/v1/admin/business/timeseries?granularity=month` | Nouveaux raccordements par mois |
+| `GET` | `/api/v1/admin/business/sites?page=1&size=50` | Drilldown paginé |
+| `GET` | `/api/v1/admin/business/smtp-rules` | Liste des règles SMTP |
+
+### Tester la suite business
+
+```bash
+# Tests unitaires (classification SMTP avec mocks)
+docker compose exec -w /app backend python -m pytest tests/test_business_counter.py -v -k "not integration"
+```
+
+### UI Admin
+
+Accessible dans l'interface admin : **Admin → Métriques Business**
+- Route : `/admin/business-metrics`
+- Contenu : 4 widgets de synthèse, graphique d'évolution, table drilldown paginée
+
+### Fallback obligatoire
+
+Si aucune règle SMTP ne matche l'expéditeur, l'import est automatiquement attribué au provider `PROVIDER_UNCLASSIFIED`. Ce provider **doit toujours exister** en base (inclus dans `18_seed_providers.sql`).

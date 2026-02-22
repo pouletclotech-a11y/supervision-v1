@@ -83,10 +83,25 @@ services:
       POSTGRES_PASSWORD: admin_password_secure_change_me
       POSTGRES_DB: supervision
     restart: unless-stopped
+    healthcheck:
+      test: [ "CMD-SHELL", "find /tmp/worker_heartbeat -mmin -1" ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
     depends_on:
       - backend
       - db
       - redis
+    networks:
+      - supervision-network
+
+  admin-seed:
+    build: ./backend
+    container_name: supervision_admin_seed
+    command: python create_admin.py --email admin@supervision.local --password SuperSecurePassword123
+    depends_on:
+      db:
+        condition: service_healthy
     networks:
       - supervision-network
 

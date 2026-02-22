@@ -23,6 +23,7 @@ from app.services.email_fetcher import EmailFetcher
 from app.ingestion.normalizer import Normalizer
 from app.services.archiver import ArchiverService
 from app.services.provider_resolver import ProviderResolver
+from app.services.classification_service import ClassificationService
 
 # Phase B1: New Imports
 from app.ingestion.adapters.registry import AdapterRegistry
@@ -30,6 +31,7 @@ from app.ingestion.adapters.base import BaseAdapter, AdapterItem
 from app.ingestion.profile_manager import ProfileManager
 from app.ingestion.profile_matcher import ProfileMatcher
 from app.ingestion.redis_lock import RedisLock
+from app.ingestion.utils import compute_sha256, get_file_probe
 
 # Register Parsers
 ParserFactory.register_parser(ExcelParser)
@@ -56,58 +58,6 @@ profile_matcher = ProfileMatcher(profile_manager)
 async def get_redis_client():
     return redis.from_url(f"redis://{settings.POSTGRES_SERVER.replace('db', 'redis')}:6379", encoding="utf-8", decode_responses=True)
 
-def compute_sha256(file_path: Path) -> str:
-    sha256_hash = hashlib.sha256()
-    with open(file_path, "rb") as f:
-        for byte_block in iter(lambda: f.read(4096), b""):
-            sha256_hash.update(byte_block)
-    return sha256_hash.hexdigest()
-
-def _get_file_probe(file_path: Path) -> tuple:
-    """
-    Extracts a small sample of headers or text to help the ProfileMatcher.
-    - Excel: A1 value (first row)
-    - PDF: First page text (limit to 2000 chars)
-    """
-    ext = file_path.suffix.lower()
-    headers = None
-    text_content = None
-    
-    try:
-        if ext in ['.xls', '.xlsx']:
-            # Check if binary or TSV
-            is_binary = False
-            with open(file_path, 'rb') as f:
-                head = f.read(4)
-                if head == b'PK\x03\x04': # ZIP header for .xlsx
-                    is_binary = True
-            
-            if is_binary:
-                import pandas as pd
-                # Read only 1 row, no header assume first row is data or signal
-                df = pd.read_excel(str(file_path), nrows=1, header=None)
-                if not df.empty:
-                    headers = [str(c).strip() for c in df.iloc[0].tolist() if c is not None]
-            else:
-                import csv
-                from app.utils.text import clean_excel_value
-                with open(file_path, 'r', encoding='latin-1', errors='replace') as f:
-                    reader = csv.reader(f, delimiter='\t')
-                    first_row = next(reader, None)
-                    if first_row:
-                        headers = [clean_excel_value(c) for c in first_row if c]
-        
-        elif ext == '.pdf':
-            import pdfplumber
-            with pdfplumber.open(str(file_path)) as pdf:
-                if pdf.pages:
-                    text_content = pdf.pages[0].extract_text()
-                    if text_content:
-                        text_content = text_content[:2000]
-    except Exception as e:
-        logger.warning(f"[Probe] Failed for {file_path.name}: {e}")
-        
-    return headers, text_content
 
 async def process_ingestion_item(adapter: BaseAdapter, item: AdapterItem, redis_lock: RedisLock, redis_client, poll_run_id: str = ""):
     """
@@ -141,17 +91,18 @@ async def process_ingestion_item(adapter: BaseAdapter, item: AdapterItem, redis_
                 await adapter.ack_duplicate(item, existing_import.id)
                 return
 
-            # Reload profiles each item to ensure DB sync (or could be once per cycle)
+            # 4. Classification de l'import (SMTP Provider)
+            sender_email = item.metadata.get('sender_email')
+            resolved_provider_id = await ClassificationService.classify_email(session, sender_email)
+            
+            # --- Profiling (déjà existant) ---
+            # Reload profiles each item to ensure DB sync
             await profile_manager.load_profiles(session)
 
-            # 4. Profile Matching (Phase 3: abstraction & threshold)
-            sender_email = item.metadata.get('sender_email')
-            resolved_provider_id = None
-            if sender_email:
-                # Resolve provider agnostically if possible, or via current resolver
-                resolved_provider_id = await provider_resolver.resolve_provider(sender_email, session)
+            # 5. Profile Matching (Phase 3: abstraction & threshold)
+            # The previous provider resolution logic is replaced by ClassificationService.classify_email
             
-            headers_probe, text_probe = _get_file_probe(file_path)
+            headers_probe, text_probe = get_file_probe(file_path)
             profile, match_report = profile_matcher.match(file_path, headers=headers_probe, text_content=text_probe)
             
             if profile is None:
@@ -265,6 +216,7 @@ async def worker_loop():
     redis_client = await get_redis_client()
     redis_lock = RedisLock(redis_client)
     registry = AdapterRegistry()
+    heartbeat_path = Path("/tmp/worker_heartbeat")
 
     while True:
         poll_run_id = str(uuid.uuid4())[:8]
@@ -279,6 +231,13 @@ async def worker_loop():
 
         elapsed_ms = int((time.monotonic() - t0) * 1000)
         logger.info(f"[METRIC] event=poll_cycle_done run_id={poll_run_id} duration_ms={elapsed_ms}")
+        
+        # Write heartbeat
+        try:
+            heartbeat_path.touch()
+        except:
+            pass
+            
         await asyncio.sleep(5)
 
 async def main():

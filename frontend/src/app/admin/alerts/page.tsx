@@ -185,9 +185,9 @@ export default function RulesPage() {
 
             // Clean up empty strings for optional fields
             const payload = { ...editingRule };
-            if (payload.scope_site_code === '') payload.scope_site_code = null;
-            if (payload.schedule_start === '') payload.schedule_start = null;
-            if (payload.schedule_end === '') payload.schedule_end = null;
+            if (payload.scope_site_code === '') payload.scope_site_code = undefined;
+            if (payload.schedule_start === '') payload.schedule_start = undefined;
+            if (payload.schedule_end === '') payload.schedule_end = undefined;
 
             // Mode-specific cleanup
             if (payload.sequence_enabled) {

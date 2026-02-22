@@ -78,6 +78,56 @@ These areas are subject to change in upcoming V2 phases.
 | **UI** | Zebra Striping Readability | Default MUI styles overrode custom rows. | Implemented custom `row-theme-a/b` classes tied to `site_code`. | Use functional CSS classes for logic-based styling (like grouping by Site). |
 | **Parsing** | Data Missing in Events | Regex applied before extraction. | Ordered normalization to ensure `site_code` (Digits) and `client_name` are extracted first. | Data cleaning (Digits only for Site Code) is crucial before storage. |
 
+---
+
+## Roadmap 2.A — Business Metrics Layer
+
+### Vue d'ensemble
+La Phase 2.A ajoute un layer de comptage des raccordements (codes site distincts) par télésurveilleur (Provider), avec classification automatique des imports par expéditeur SMTP.
+
+### Flux de Classification & Business Counter
+
+```
+Email entrant
+    │
+    ├─ metadata.sender_email (exemple: "alerts@beta.com")
+    │
+    ▼
+ ClassificationService
+    │  Lit smtp_provider_rules (par priorité croissante)
+    │  Match EXACT / DOMAIN / CONTAINS / REGEX
+    │
+    ├─ Match trouvé → provider_id = 2 (PROVIDER_BETA)
+    └─ Aucun match  → provider_id = PROVIDER_UNCLASSIFIED
+    │
+    ▼
+ Worker (pour chaque NormalizedEvent)
+    │  UPSERT site_connections (ON CONFLICT provider_id, code_site)
+    │  ├─ INSERT si nouveau raccordement (first_seen_at fixé une fois)
+    │  └─ UPDATE last_seen_at + total_events++
+    │
+    ▼
+ API Admin /business/
+    ├─ /summary       → totaux par provider
+    ├─ /timeseries    → nouveaux raccordements par mois/année
+    ├─ /sites         → drilldown paginé
+    └─ /smtp-rules    → CRUD des règles de classification
+```
+
+### Tables impliquées
+
+| Table | Rôle |
+|---|---|
+| `monitoring_providers` | Registre des télésurveilleurs (code UNIQUE) |
+| `smtp_provider_rules` | Règles de classification SMTP (priorité, match_type, pattern) |
+| `site_connections` | Compteur business par (code_site, provider_id) |
+
+### Contraintes
+- `site_connections(provider_id, code_site)` : contrainte UNIQUE pour l'idempotence
+- `first_seen_at` : jamais écrasé lors de l'upsert
+- `total_events` : incrémenté à chaque traitement via `total_events + 1`
+- Provider `PROVIDER_UNCLASSIFIED` : fallback obligatoire si aucune règle ne matche
+
 ## Technology Stack
 - **Languages**: Python 3.11, JavaScript/TypeScript (Next.js)
 - **Containerization**: Docker Compose
