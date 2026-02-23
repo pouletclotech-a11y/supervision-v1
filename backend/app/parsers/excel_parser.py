@@ -85,7 +85,7 @@ class ExcelParser(BaseParser):
             
         return events
 
-    def _parse_tsv_excel(self, file_path: str, source_timezone: str = "UTC") -> List[NormalizedEvent]:
+    def _parse_tsv_excel(self, file_path: str, source_timezone: str = "UTC", parser_config: dict = None) -> List[NormalizedEvent]:
         events = []
         # Context trackers (Inheritance)
         ctx_site_code = None

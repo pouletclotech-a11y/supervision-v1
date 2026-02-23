@@ -21,24 +21,37 @@ Mise en place du layer de comptage des raccordements (codes site distincts) par 
 - **Tests** : 9/9 tests unitaires passés (classification SMTP)
 - **Source SMTP officielle** : `imports.import_metadata->>'sender_email'`
 
----
-
-## Phase 2.B — Dataset Réel & Validation Ingestion
-**Status**: `PLANNED` | **Cible**: Prochaine session
-
-Validation end-to-end avec données réelles et enrichissement des KPI.
-
-- **Injection dataset réel** : replay depuis fichiers XLS archivés ou upload manuel dans `dropbox_in`
-- **Validation end-to-end** : dépôt fichier → import SUCCESS → events > 0 → `site_connections` incrémenté
-- **Performance upsert** : mesure du temps de traitement sur gros volumes (> 500 événements/import)
-- **KPI avancés** :
-  - Ratio intrusion vs technique par provider
-  - Taux de classification automatique vs UNCLASSIFIED
-  - Évolution mensuelle des nouveaux raccordements
-- **Multi-provider drilldown** : filtre croisé provider × période dans l'UI
-- **Tests d'intégration** : `pytest -m integration` avec base de données de test réelle
+> [!NOTE]
+> **Stabilisation ingestion validée avant Phase 2.B.**
 
 ---
+
+## Phase 2.B — Provider Monitoring Layer (Future Work)
+**Status**: `PLANNED` | **Cible**: À planifier
+
+Renforcement du module `MonitoringProvider` avec des paramètres opérationnels pour détecter les anomalies de flux.
+
+### 1. Évolutions du Modèle (MonitoringProvider)
+- **recovery_email** : Email de contact pour les alertes de flux.
+- **expected_emails_per_day** : Nombre d'emails/imports attendu par jour.
+- **expected_frequency_type** : `daily`, `weekly`, or `custom`.
+- **monitoring_enabled** : Activation/Désactivation de la surveillance pour ce provider.
+
+### 2. Logique Métier
+- **Détection de silence** : Alerte si aucun import n'est reçu sur la période attendue.
+- **Vérification de volume** : Comparaison du nombre d'imports réels vs `expected_emails_per_day`.
+- **Notifications** : Envoi d'alertes vers le `recovery_email` ou génération d'incidents internes.
+
+### 3. Interface Admin
+- **Paramétrage** : Gestion des seuils dans `Admin > Providers`.
+- **Health Dashboard** : Widget "Flux attendu vs reçu" pour une visualisation rapide de la santé opérationnelle.
+
+---
+
+## Phase 2.C — Dataset Réel & Validation Ingestion
+**Status**: `PLANNED`
+
+Validation end-to-end avec données réelles et enrichissement des KPI (Initialement 2.B).
 
 ## V1: Foundation (Stable & Acquired)
 **Status**: `RELEASED` | **Version**: `1.0`

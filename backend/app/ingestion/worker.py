@@ -52,7 +52,6 @@ provider_resolver = ProviderResolver()
 
 # Initialize Profile Engine (Phase A)
 profile_manager = ProfileManager()
-profile_manager.load_profiles()
 profile_matcher = ProfileMatcher(profile_manager)
 
 async def get_redis_client():
@@ -182,6 +181,13 @@ async def process_ingestion_item(adapter: BaseAdapter, item: AdapterItem, redis_
                     is_dup = await dedup_service.is_duplicate(event)
                     if not is_dup:
                         unique_events.append(event)
+                        # Phase 2.A: Actualiser le compteur business (raccordement site)
+                        await repo.upsert_site_connection(
+                            provider_id=resolved_provider_id,
+                            code_site=event.site_code,
+                            client_name=event.client_name,
+                            seen_at=event.timestamp
+                        )
                         await alerting_service.check_and_trigger_alerts(event, active_rules, repo=repo)
                     else:
                         duplicates_count += 1

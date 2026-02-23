@@ -367,6 +367,47 @@ class EventRepository:
         logger.info(f"Populated site_connections: {added} new, {len(site_map) - added} existing (provider={provider_id})")
         return added
 
+    async def upsert_site_connection(self, provider_id: int, code_site: str, client_name: str, seen_at: datetime):
+        """
+        Idempotent upsert for SiteConnection. Increment total_events and update last_seen_at.
+        First_seen_at is preserved automatically by the server_default or NOT being in the update.
+        """
+        # PostgreSQL specific UPSERT
+        from sqlalchemy.dialects.postgresql import insert
+        stmt = insert(SiteConnection).values(
+            provider_id=provider_id,
+            code_site=code_site,
+            client_name=client_name,
+            first_seen_at=seen_at,
+            last_seen_at=seen_at,
+            total_events=1
+        )
+        
+        stmt = stmt.on_conflict_do_update(
+            index_elements=['provider_id', 'code_site'],
+            set_={
+                "last_seen_at": seen_at,
+                "total_events": SiteConnection.total_events + 1,
+                "client_name": client_name # Update name if it changed
+            }
+        )
+        await self.session.execute(stmt)
+
+    async def get_business_summary(self):
+        """Totals by provider"""
+        stmt = (
+            select(
+                MonitoringProvider.label,
+                MonitoringProvider.code,
+                func.count(SiteConnection.id).label("total_sites"),
+                func.sum(SiteConnection.total_events).label("total_events")
+            )
+            .join(SiteConnection, MonitoringProvider.id == SiteConnection.provider_id, isouter=True)
+            .group_by(MonitoringProvider.id)
+        )
+        result = await self.session.execute(stmt)
+        return result.all()
+
 class AdminRepository:
     def __init__(self, session: AsyncSession):
         self.session = session
@@ -462,43 +503,3 @@ class AdminRepository:
             error_message=None
         )
         await self.session.execute(log_stmt)
-
-    async def upsert_site_connection(self, provider_id: int, code_site: str, client_name: str, seen_at: datetime):
-        """
-        Idempotent upsert for SiteConnection. Increment total_events and update last_seen_at.
-        First_seen_at is preserved automatically by the server_default or NOT being in the update.
-        """
-        # PostgreSQL specific UPSERT
-        stmt = insert(SiteConnection).values(
-            provider_id=provider_id,
-            code_site=code_site,
-            client_name=client_name,
-            first_seen_at=seen_at,
-            last_seen_at=seen_at,
-            total_events=1
-        )
-        
-        stmt = stmt.on_conflict_do_update(
-            index_elements=['provider_id', 'code_site'],
-            set_={
-                "last_seen_at": seen_at,
-                "total_events": SiteConnection.total_events + 1,
-                "client_name": client_name # Update name if it changed
-            }
-        )
-        await self.session.execute(stmt)
-
-    async def get_business_summary(self):
-        """Totals by provider"""
-        stmt = (
-            select(
-                MonitoringProvider.label,
-                MonitoringProvider.code,
-                func.count(SiteConnection.id).label("total_sites"),
-                func.sum(SiteConnection.total_events).label("total_events")
-            )
-            .join(SiteConnection, MonitoringProvider.id == SiteConnection.provider_id, isouter=True)
-            .group_by(MonitoringProvider.id)
-        )
-        result = await self.session.execute(stmt)
-        return result.all()
