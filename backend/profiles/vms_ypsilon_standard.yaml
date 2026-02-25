@@ -6,6 +6,7 @@ detection:
   extensions:
     - .xls
     - .xlsx
+  filename_pattern: 'YPSILON'
   required_headers:
     - TITRE EXPORT
 mapping:

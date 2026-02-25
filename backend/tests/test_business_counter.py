@@ -139,7 +139,16 @@ class TestSiteConnectionUpsert:
         from sqlalchemy import select
         from app.db.models import SiteConnection
 
+        from app.db.models import MonitoringProvider
+        
         repo = EventRepository(db_session)
+        
+        # Ensure providers exist (ID 1 and 2)
+        p1 = MonitoringProvider(id=1, code="P1", label="Provider 1")
+        p2 = MonitoringProvider(id=2, code="P2", label="Provider 2")
+        db_session.add_all([p1, p2])
+        await db_session.flush()
+        
         now = datetime.now(timezone.utc)
 
         await repo.upsert_site_connection(provider_id=1, code_site='12345', client_name='Client A', seen_at=now)
@@ -164,7 +173,15 @@ class TestSiteConnectionUpsert:
         from sqlalchemy import select
         from app.db.models import SiteConnection
 
+        from app.db.models import MonitoringProvider
+        
         repo = EventRepository(db_session)
+        
+        # Ensure provider exists
+        p1 = MonitoringProvider(id=1, code="P1", label="Provider 1")
+        db_session.add(p1)
+        await db_session.flush()
+        
         now = datetime.now(timezone.utc)
 
         await repo.upsert_site_connection(provider_id=1, code_site='67890', client_name='Client B', seen_at=now)
@@ -190,7 +207,15 @@ class TestSiteConnectionUpsert:
         from app.db.models import SiteConnection
         from datetime import timedelta
 
+        from app.db.models import MonitoringProvider
+        
         repo = EventRepository(db_session)
+        
+        # Ensure provider exists
+        p1 = MonitoringProvider(id=1, code="P1", label="Provider 1")
+        db_session.add(p1)
+        await db_session.flush()
+        
         t1 = datetime(2025, 1, 1, tzinfo=timezone.utc)
         t2 = datetime(2025, 6, 1, tzinfo=timezone.utc)
 

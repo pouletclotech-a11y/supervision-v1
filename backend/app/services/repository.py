@@ -7,7 +7,8 @@ from sqlalchemy import select, update, func
 from sqlalchemy.dialects.postgresql import insert
 from app.db.models import (
     Event, Site, ImportLog, AlertRule, EventRuleHit, SiteConnection, 
-    RuleCondition, AuditLog, ProfileRevision, ReprocessJob, DBIngestionProfile
+    RuleCondition, AuditLog, ProfileRevision, ReprocessJob, DBIngestionProfile,
+    MonitoringProvider
 )
 from app.ingestion.models import NormalizedEvent
 
@@ -408,6 +409,15 @@ class EventRepository:
         result = await self.session.execute(stmt)
         return result.all()
 
+    async def update_provider_last_import(self, provider_id: int, timestamp: datetime):
+        """Update last_successful_import_at for health monitoring."""
+        if not provider_id:
+            return
+        stmt = update(MonitoringProvider).where(MonitoringProvider.id == provider_id).values(
+            last_successful_import_at=timestamp
+        )
+        await self.session.execute(stmt)
+
 class AdminRepository:
     def __init__(self, session: AsyncSession):
         self.session = session
@@ -483,23 +493,110 @@ class AdminRepository:
         await self.session.execute(hit_stmt)
         
         # 2. Delete Incidents
-        # We delete incidents where either open or close event belongs to this import
         inc_stmt = delete(Incident).where((Incident.open_event_id.in_(
             select(Event.id).where(Event.import_id == import_id)
         )) | (Incident.close_event_id.in_(
             select(Event.id).where(Event.import_id == import_id)
         )))
         await self.session.execute(inc_stmt)
-
+        
         # 3. Delete Events
         evt_stmt = delete(Event).where(Event.import_id == import_id)
         await self.session.execute(evt_stmt)
         
+        # 4. Reset ImportLog status
         log_stmt = update(ImportLog).where(ImportLog.id == import_id).values(
             status="PENDING",
             events_count=0,
             duplicates_count=0,
-            unmatched_count=0,
             error_message=None
         )
         await self.session.execute(log_stmt)
+
+    async def get_providers_health(self) -> List[dict]:
+        """Calculates health status for all active providers."""
+        # 1. Get all active providers
+        stmt = select(MonitoringProvider).where(MonitoringProvider.is_active == True)
+        result = await self.session.execute(stmt)
+        providers = result.scalars().all()
+
+        # 2. Get import counts in last 24h
+        now = datetime.now(timezone.utc)
+        yesterday = now - timedelta(days=1)
+        import_stmt = (
+            select(ImportLog.provider_id, func.count(ImportLog.id).label("count"))
+            .where(ImportLog.created_at >= yesterday)
+            .where(ImportLog.status == "SUCCESS")
+            .group_by(ImportLog.provider_id)
+        )
+        import_result = await self.session.execute(import_stmt)
+        import_counts = {p_id: count for p_id, count in import_result.all() if p_id}
+
+        # 3. Composite health logic
+        health_reports = []
+        
+        for p in providers:
+            received = import_counts.get(p.id, 0)
+            expected = p.expected_emails_per_day
+            
+            completion_rate = None
+            if expected > 0:
+                completion_rate = received / expected
+            
+            # Default Status
+            status = "OK"
+            
+            if not p.monitoring_enabled and expected == 0:
+                status = "UNCONFIGURED"
+            elif p.monitoring_enabled:
+                if not p.last_successful_import_at:
+                    status = "SILENT"
+                else:
+                    last_import = p.last_successful_import_at
+                    if last_import.tzinfo is None:
+                        last_import = last_import.replace(tzinfo=timezone.utc)
+                        
+                    delta_min = (now - last_import).total_seconds() / 60
+                    if delta_min > p.silence_threshold_minutes:
+                        status = "SILENT"
+                    elif expected > 0 and received < expected:
+                        status = "LATE"
+            elif expected > 0 and received < expected:
+                status = "LATE"
+
+            health_reports.append({
+                "id": p.id,
+                "code": p.code,
+                "label": p.label,
+                "status": status,
+                "received_24h": received,
+                "expected_24h": expected,
+                "completion_rate": completion_rate,
+                "last_successful_import_at": p.last_successful_import_at,
+                "ui_color": p.ui_color
+            })
+            
+        return health_reports
+
+    async def update_provider_monitoring(self, provider_id: int, data: dict) -> Optional[MonitoringProvider]:
+        """Updates monitoring specific fields for a provider."""
+        stmt = select(MonitoringProvider).where(MonitoringProvider.id == provider_id)
+        result = await self.session.execute(stmt)
+        provider = result.scalar_one_or_none()
+        
+        if not provider:
+            return None
+            
+        # Only allow updating monitoring fields
+        allowed_fields = [
+            "recovery_email", "expected_emails_per_day", 
+            "expected_frequency_type", "silence_threshold_minutes", 
+            "monitoring_enabled"
+        ]
+        
+        for field, value in data.items():
+            if field in allowed_fields and value is not None:
+                setattr(provider, field, value)
+        
+        await self.session.flush()
+        return provider

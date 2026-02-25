@@ -50,6 +50,7 @@ services:
   backend:
     build: ./backend
     container_name: supervision_backend
+    user: "0:0"
     volumes:
       - ./backend:/app
       - ./dropbox_in:/app/data/ingress
@@ -72,6 +73,7 @@ services:
   worker:
     build: ./backend
     container_name: supervision_worker
+    user: "0:0"
     command: python -m app.ingestion.worker
     volumes:
       - ./backend:/app

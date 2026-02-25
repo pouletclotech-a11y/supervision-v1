@@ -33,7 +33,7 @@ class ClassificationService:
             pattern = rule.match_value.lower()
             sender_lower = sender_email.lower()
 
-            if match_type == 'EXACT':
+            if match_type in ['EXACT', 'EMAIL']:
                 if sender_lower == pattern:
                     match = True
             elif match_type == 'DOMAIN':

@@ -120,9 +120,10 @@ class ExcelParser(BaseParser):
 
         # --- 1. SITE_CODE PROPAGATION (Col A) ---
         if col_a:
-            site_match = re.match(r'^(C-\d+|\d{8})$', col_a)
+            col_a_clean = str(col_a).strip()
+            site_match = re.match(r'^(C-)?(\d+)$', col_a_clean)
             if site_match:
-                ctx_site_code = re.sub(r'\D', '', col_a)
+                ctx_site_code = site_match.group(2) # Extract only digits (e.g. 69000 from C-69000)
                 # Client name is usually in Col B of the header row
                 if col_b and str(col_b).upper()[:3] not in ["LUN", "MAR", "MER", "JEU", "VEN", "SAM", "DIM"]:
                     ctx_client_name = str(col_b).strip()
@@ -195,10 +196,14 @@ class ExcelParser(BaseParser):
         col_msg = str(clean_row[8]).strip()
 
         # 1. Propagation
-        if col_site and re.match(r'^\d{8}$', col_site):
-            ctx_site_code = col_site
-            if col_client and col_client.lower() != 'nan':
-                ctx_client_name = col_client
+        if col_site:
+            col_site_clean = str(col_site).strip()
+            # Handle both formats: "69000" or "C-69000"
+            match_site = re.match(r'^(C-)?(\d+)$', col_site_clean)
+            if match_site:
+                ctx_site_code = match_site.group(2)
+                if col_client and col_client.lower() != 'nan':
+                    ctx_client_name = col_client.strip()
         
         # 2. Timestamp
         ts = None

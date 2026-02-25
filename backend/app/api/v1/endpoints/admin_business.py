@@ -4,7 +4,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from app.auth import deps
 from app.db.models import SiteConnection, MonitoringProvider, SmtpProviderRule, User
-from app.services.repository import EventRepository
+from app.services.repository import EventRepository, AdminRepository
+from app.schemas.monitoring_provider import MonitoringProviderUpdate, ProviderHealthStatus
 
 router = APIRouter()
 
@@ -112,5 +113,46 @@ async def get_smtp_rules(
     current_user: User = Depends(deps.get_current_active_admin),
 ) -> Any:
     stmt = select(SmtpProviderRule).order_by(SmtpProviderRule.priority.asc())
+    result = await db.execute(stmt)
+    return result.scalars().all()
+
+@router.get("/providers/health", response_model=List[ProviderHealthStatus])
+async def get_providers_health(
+    db: AsyncSession = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_admin),
+) -> Any:
+    """
+    Get health status for all monitoring providers.
+    """
+    repo = AdminRepository(db)
+    return await repo.get_providers_health()
+
+@router.patch("/providers/{provider_id}/monitoring")
+async def update_provider_monitoring(
+    provider_id: int,
+    data: MonitoringProviderUpdate,
+    db: AsyncSession = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_admin),
+) -> Any:
+    """
+    Update monitoring configuration for a specific provider.
+    """
+    repo = AdminRepository(db)
+    provider = await repo.update_provider_monitoring(provider_id, data.model_dump(exclude_unset=True))
+    if not provider:
+        raise HTTPException(status_code=404, detail="Provider not found")
+    
+    await db.commit()
+    return {"status": "success"}
+
+@router.get("/providers")
+async def get_all_providers(
+    db: AsyncSession = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_admin),
+) -> Any:
+    """
+    Get all providers with full monitoring configuration.
+    """
+    stmt = select(MonitoringProvider).order_by(MonitoringProvider.label.asc())
     result = await db.execute(stmt)
     return result.scalars().all()

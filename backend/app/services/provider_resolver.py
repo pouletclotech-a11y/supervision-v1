@@ -20,16 +20,16 @@ class ProviderResolver:
         self, 
         from_email: str, 
         db: AsyncSession
-    ) -> Optional[int]:
+    ) -> Optional[SmtpProviderRule]:
         """
-        Résout le provider_id depuis l'email expéditeur.
+        Résout la règle SMTP correspondante depuis l'email expéditeur.
         
         Args:
             from_email: Adresse email complète (ex: alerts@spgo.fr)
             db: Session DB async
             
         Returns:
-            provider_id si trouvé, None sinon
+            SmtpProviderRule si trouvé, None sinon
         """
         if not from_email:
             return None
@@ -58,23 +58,23 @@ class ProviderResolver:
         # 1. EXACT match
         for rule in exact_rules:
             if from_email_lower == rule.match_value.lower():
-                logger.debug(f"EXACT match: {from_email} -> provider_id={rule.provider_id}")
-                return rule.provider_id
+                logger.debug(f"EXACT match: {from_email} -> rule_id={rule.id}")
+                return rule
         
         # 2. DOMAIN match
         if domain:
             for rule in domain_rules:
                 # match_value stocke le domaine sans @ (ex: spgo.fr)
                 if domain == rule.match_value.lower():
-                    logger.debug(f"DOMAIN match: {from_email} -> provider_id={rule.provider_id}")
-                    return rule.provider_id
+                    logger.debug(f"DOMAIN match: {from_email} -> rule_id={rule.id}")
+                    return rule
         
         # 3. REGEX match
         for rule in regex_rules:
             try:
                 if re.search(rule.match_value, from_email_lower, re.IGNORECASE):
-                    logger.debug(f"REGEX match: {from_email} -> provider_id={rule.provider_id}")
-                    return rule.provider_id
+                    logger.debug(f"REGEX match: {from_email} -> rule_id={rule.id}")
+                    return rule
             except re.error as e:
                 logger.warning(f"Invalid regex in rule {rule.id}: {e}")
                 continue

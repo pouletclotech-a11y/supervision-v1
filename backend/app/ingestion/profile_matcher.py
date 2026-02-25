@@ -58,8 +58,8 @@ class ProfileMatcher:
                         score += float(h_matches)
                         details.append(f"{h_matches}/{len(profile.detection.required_headers)} headers match (+{float(h_matches)})")
                     else:
-                        score -= 10.0 # Heavy penalty if required headers don't match
-                        details.append("REQUIRED HEADERS MISMATCH (-10.0)")
+                        score -= 3.0 # Heavy penalty if required headers don't match
+                        details.append("REQUIRED HEADERS MISMATCH (-3.0)")
             
             # 4. Text content matching (+3.0 per keyword)
             if profile.detection.required_text:
@@ -73,8 +73,8 @@ class ProfileMatcher:
                         score += float(t_matches * 3.0)
                         details.append(f"{t_matches}/{len(profile.detection.required_text)} text keywords match (+{float(t_matches * 3.0)})")
                     else:
-                        score -= 10.0 # Heavy penalty
-                        details.append("REQUIRED TEXT MISMATCH (-10.0)")
+                        score -= 3.0 # Heavy penalty
+                        details.append("REQUIRED TEXT MISMATCH (-3.0)")
 
             threshold = profile.confidence_threshold or 2.0
             is_valid = score >= threshold

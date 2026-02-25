@@ -21,7 +21,7 @@ import {
 import { DataGrid, GridColDef } from '@mui/x-data-grid';
 import { Users, UserPlus, Edit2, Trash2, Shield, Camera } from 'lucide-react';
 import Layout from '../../../components/Layout';
-import { fetchWithAuth } from '../../../lib/api';
+import { fetchWithAuth, API_ORIGIN } from '../../../lib/api';
 import { useAuth } from '@/context/AuthContext';
 
 interface User {
@@ -170,14 +170,24 @@ export default function UsersPage() {
     const columns: GridColDef[] = [
         {
             field: 'avatar', headerName: '', width: 50, sortable: false,
-            renderCell: (params) => (
-                <Avatar
-                    src={params.row.profile_photo ? (params.row.profile_photo.startsWith('http') ? params.row.profile_photo : `${(process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace('/api/v1', '')}${params.row.profile_photo}`) : undefined}
-                    sx={{ width: 32, height: 32, fontSize: 12, bgcolor: 'primary.main' }}
-                >
-                    {params.row.full_name?.[0] || params.row.email[0].toUpperCase()}
-                </Avatar>
-            )
+            renderCell: (params) => {
+                // DISTINCTION : Les photos de profil sont des assets statiques (/uploads/...) 
+                // servis par le serveur web, pas des endpoints API (/api/v1/...).
+                // On utilise API_ORIGIN (centralisé dans lib/api.ts).
+                const photoUrl = params.row.profile_photo;
+                const src = photoUrl
+                    ? (photoUrl.startsWith('http') ? photoUrl : `${API_ORIGIN}${photoUrl}`)
+                    : undefined;
+
+                return (
+                    <Avatar
+                        src={src}
+                        sx={{ width: 32, height: 32, fontSize: 12, bgcolor: 'primary.main' }}
+                    >
+                        {params.row.full_name?.[0] || params.row.email[0].toUpperCase()}
+                    </Avatar>
+                );
+            }
         },
         { field: 'id', headerName: 'ID', width: 60 },
         { field: 'email', headerName: 'Email', flex: 1 },

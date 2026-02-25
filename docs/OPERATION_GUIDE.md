@@ -40,6 +40,22 @@ docker compose exec db psql -U admin -d supervision -c \
    - Via Dropbox : copier le `.xls` dans `./dropbox_in/`
    - Via IMAP : envoyer l'email avec pièce jointe à l'adresse configurée
 
+### Gestion des Providers (Phase 2.A & 2.B)
+
+Les providers (télésurveilleurs) peuvent être configurés via l'interface Admin ou directement via l'API.
+
+#### Paramétrage du Monitoring (Phase 2.B)
+Pour chaque provider, vous pouvez définir :
+- **Seuil de silence** : Délai max (en minutes) sans réception avant alerte.
+- **Volume attendu** : Nombre d'imports prévus par 24h.
+- **Email de secours** : Contact pour les notifications de santé du flux.
+
+#### Ajout d'une règle SMTP
+Pour affecter automatiquement un mail entrant à un provider :
+1. Aller dans **Admin > SMTP Rules**.
+2. Ajouter une règle (ex: Type `DOMAIN`, Valeur `beta-telecom.fr`).
+3. Définir la priorité (plus c'est haut, plus c'est testé tôt).
+
 2. **Vérifier que l'import est traité** :
    ```bash
    docker logs -f supervision_worker 2>&1 | grep -E "SUCCESS|ERROR|import_"
@@ -113,18 +129,66 @@ docker exec -i supervision_db psql -U admin -d supervision < backend/migrations/
 ```
 *Cela injecte 4 types de règles (Simple, OpenOnly, Sequence, AST) pour la vérification.*
 
-## 3. User Management (V2)
+## 3. Gestion de l'Accès Admin (Sécurité)
 
-### Create First Admin (Deterministic Seed)
-```bash
-docker compose exec backend python create_admin.py --email admin@supervision.local --password SuperSecurePassword123
+### Seed Automatique au Démarrage
+Le système vérifie au boot s'il existe au moins un utilisateur avec le rôle `ADMIN`.
+- **En Développement** (`ENVIRONMENT=development`) : Si absent, un admin est créé avec `admin@supervision.local / SuperSecurePassword123`. Les tables sont créées automatiquement (`create_all`).
+- **En Production** (`ENVIRONMENT=production`) :
+  - L'auto-seed ne s'exécute **que si la table `users` existe** (migrations complétées).
+  - Le mot de passe **doit** être défini via la variable d'environnement `DEFAULT_ADMIN_PASSWORD`.
+  - La création de table automatique est **désactivée`.
+
+### Variables d'Environnement Clés
+| Variable | Valeur par défaut | Description |
+|---|---|---|
+| `ENVIRONMENT` | `production` | `production` ou `development`. |
+| `DEFAULT_ADMIN_EMAIL` | `admin@supervision.local` | Email de l'admin par défaut. |
+| `DEFAULT_ADMIN_PASSWORD` | *(Aucune en prod)* | **Obligatoire en production** pour le seed initial. |
+| `AUTO_SEED_ADMIN` | `True` | Désactiver pour empêcher tout auto-seed. |
+
+### Monitoring des Providers (Phase 2.B)
+
+Les colonnes de monitoring dans `monitoring_providers` sont configurées avec des valeurs par défaut strictes pour éviter les erreurs d'insertion :
+- `expected_emails_per_day` : 0
+- `expected_frequency_type` : 'daily'
+- `silence_threshold_minutes` : 1440 (24h)
+- `monitoring_enabled` : false
+- `is_active` : true
+
+#### Vérification de la structure et des defaults
+Pour vérifier que la base de données est correctement configurée :
+
+```powershell
+docker compose exec db psql -U admin -d supervision -c "SELECT column_name, is_nullable, column_default FROM information_schema.columns WHERE table_name='monitoring_providers' AND column_name IN ('expected_emails_per_day','expected_frequency_type','silence_threshold_minutes','monitoring_enabled','is_active');"
 ```
-Cette commande est idempotente : elle crée l'utilisateur s'il n'existe pas, ou met à jour son mot de passe s'il existe déjà.
 
-### Reset Password
-Simply run the `create_admin.py` script again with the same email and new password. The script handles updates idempotently.
+#### Vérification des données
+Pour lister les 5 derniers providers et leurs paramètres de monitoring :
 
-## 4. Monitoring & Debugging
+```powershell
+docker compose exec db psql -U admin -d supervision -c "SELECT code, expected_emails_per_day, expected_frequency_type, silence_threshold_minutes, monitoring_enabled, is_active FROM monitoring_providers ORDER BY id DESC LIMIT 5;"
+```
+### Procédure de Secours (Dépannage Admin)
+Si l'accès Admin est perdu ou si le password doit être forcé depuis le serveur :
+```bash
+docker compose exec backend python create_admin.py --email "votre@email.com" --password "NouveauPasswordSecurise"
+```
+*Cette commande est prioritaire sur l'auto-seed et mettra à jour l'utilisateur s'il existe déjà.*
+
+---
+
+## 4. Maintenance Database (Protections)
+
+### Synchronisation des Tables (`sync_db.py`)
+Le script `sync_db.py` (qui exécute `create_all`) est **verrouillé en production** pour éviter tout reset accidentel.
+
+Pour outrepasser cette sécurité (usage exceptionnel) :
+```bash
+docker compose exec -e ALLOW_SYNC_DB=1 -e I_UNDERSTAND_DATA_LOSS=YES backend python sync_db.py
+```
+
+## 5. Monitoring & Debugging
 
 ### View Logs
 ```bash
@@ -211,6 +275,9 @@ On a VPS or Production environment, data persistence is handled via Docker volum
 | **100% Events Marked Duplicate** | Deduplication used `time.time()` (Processing Time) vs `event.timestamp`. | Changed Dedupe key to use Event Timestamp Bucket. | Idempotence must rely on deterministic data, not processing time. |
 | **UI: Zebra Striping Broken** | Default MUI CSS specificity was higher than custom class. | Used `sx` prop or `!important` utility classes correctly. | Ensure custom theme classes have sufficient specificity. |
 | **Site Code contains "C-"** | Raw data often has prefixes (e.g., `C-69000`). | added Regex `\D` replacement in Normalizer. | Always sanitize identifiers (Digits Only) before storage. |
+| **Frontend build broken** | Relative import `../../../utils/api` in generic pages. | Always use the alias `@/lib/api`. | Leverage TS paths for cleaner and more robust imports. |
+| **DB Reset in Production** | `create_all` called on every boot in older versions. | Hard locking of `create_all` if `ENVIRONMENT != development`. | Production DB schema must only change via migrations. |
+| **Emails "Lost"** | Missing keyword or invalid format. | Check `ImportLog` with status `IGNORED`. | Traceability is key for debugging ingestion pipelines. |
 
 ---
 

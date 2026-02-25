@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { Box, Paper, Typography, TextField, Button, Alert } from '@mui/material';
 import { useAuth } from '../../context/AuthContext';
+import { fetchPublic } from '@/lib/api';
 
 export default function LoginPage() {
     const [email, setEmail] = useState('');
@@ -17,14 +18,12 @@ export default function LoginPage() {
         setError('');
 
         try {
-            const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
-
-            // Native Fetch for Login (AuthContext handles authenticated calls usually, but this is the gatekeeper)
+            // Utilisation de fetchPublic pour le login (pas encore de token)
             const params = new URLSearchParams();
             params.append('username', email);
             params.append('password', password);
 
-            const res = await fetch(`${API_URL}/auth/login/access-token`, {
+            const res = await fetchPublic('/auth/login/access-token', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/x-www-form-urlencoded',

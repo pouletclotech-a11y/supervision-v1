@@ -40,6 +40,17 @@ class DropboxAdapter(BaseAdapter):
                 if f.name.endswith(".meta.json"):
                     continue
                 
+                # Metadata loading
+                item_metadata = {}
+                meta_file = f.parent / (f.name + ".meta.json")
+                if meta_file.exists():
+                    try:
+                        import json
+                        with open(meta_file, 'r') as mf:
+                            item_metadata = json.load(mf)
+                    except Exception as e:
+                        logger.error(f"Failed to load metadata for {f.name}: {e}")
+
                 # Basic metadata
                 stats = f.stat()
                 items.append(AdapterItem(
@@ -47,7 +58,8 @@ class DropboxAdapter(BaseAdapter):
                     filename=f.name,
                     size_bytes=stats.st_size,
                     mtime=datetime.fromtimestamp(stats.st_mtime),
-                    source="dropbox"
+                    source="dropbox",
+                    metadata=item_metadata
                 ))
         
         # Sort by mtime ascending for deterministic processing

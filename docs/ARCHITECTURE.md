@@ -122,11 +122,20 @@ Email entrant
 | `smtp_provider_rules` | Règles de classification SMTP (priorité, match_type, pattern) |
 | `site_connections` | Compteur business par (code_site, provider_id) |
 
-### Contraintes
-- `site_connections(provider_id, code_site)` : contrainte UNIQUE pour l'idempotence
-- `first_seen_at` : jamais écrasé lors de l'upsert
-- `total_events` : incrémenté à chaque traitement via `total_events + 1`
 - Provider `PROVIDER_UNCLASSIFIED` : fallback obligatoire si aucune règle ne matche
+
+## Phase 2.B : Provider Monitoring Layer
+
+### Vue d'ensemble
+Cette couche surveille la régularité des flux entrants pour détecter les pannes chez les télésurveilleurs ou les problèmes réseau avant qu'ils ne deviennent critiques.
+
+### Logique de Détection
+1.  **Surveillance du Silence** : Le worker maintient `last_successful_import_at` pour chaque provider. Si `now() - last` dépasse `silence_threshold_minutes`, une alerte système est levée.
+2.  **Volumétrie (Attendu vs Reçu)** : Un calcul périodique compare le nombre d'imports réussis sur 24h avec `expected_emails_per_day`.
+
+### Composants de Monitoring
+- **Background Task** : Analyse régulière des délais depuis le dernier import.
+- **Incident System** : Génération d'incidents internes de type `SYSTEM_SILENCE` ou `SYSTEM_VOLUME_DROP`.
 
 ## Technology Stack
 - **Languages**: Python 3.11, JavaScript/TypeScript (Next.js)

@@ -32,6 +32,7 @@ import {
 } from 'lucide-react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '../context/AuthContext';
+import { API_ORIGIN } from '@/lib/api';
 
 const DRAWER_WIDTH = 240;
 const COLLAPSED_WIDTH = 72;
@@ -53,7 +54,8 @@ export default function Layout({ children }: LayoutProps) {
         { text: 'Dashboard', icon: <LayoutDashboard size={20} />, path: '/' },
         { text: 'Validations', icon: <FileText size={20} />, path: '/admin/data-validation' },
         { text: 'Alerts', icon: <ShieldAlert size={20} />, path: '/admin/alerts' },
-        { text: 'Calibration', icon: <Zap size={20} />, path: '/admin/calibration', roles: ['ADMIN'] },
+        { text: 'Providers', icon: <Zap size={20} />, path: '/admin/providers', roles: ['ADMIN'] },
+        { text: 'Calibration', icon: <Database size={20} />, path: '/admin/calibration', roles: ['ADMIN'] },
         { text: 'Imports', icon: <Database size={20} />, path: '/admin/imports', roles: ['ADMIN', 'OPERATOR'] },
         { text: 'Users', icon: <Users size={20} />, path: '/admin/users', roles: ['ADMIN'] },
         { text: 'Settings', icon: <Settings size={20} />, path: '/settings', roles: ['ADMIN', 'OPERATOR'] },
@@ -177,7 +179,11 @@ export default function Layout({ children }: LayoutProps) {
                             </Badge>
                         </IconButton>
                         <Avatar
-                            src={user?.profile_photo ? (user.profile_photo.startsWith('http') ? user.profile_photo : `${(process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000').replace('/api/v1', '')}${user.profile_photo}`) : undefined}
+                            src={user?.profile_photo ? (
+                                user.profile_photo.startsWith('http')
+                                    ? user.profile_photo
+                                    : `${API_ORIGIN}${user.profile_photo}`
+                            ) : undefined}
                             sx={{ width: 32, height: 32, bgcolor: 'primary.main', fontSize: 12, cursor: 'pointer' }}
                             onClick={logout}
                         >

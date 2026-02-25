@@ -28,7 +28,13 @@ async def init_test_db():
     Ensures the schema is exactly in sync with the current ORM models.
     """
     init_engine = create_async_engine(settings.SQLALCHEMY_DATABASE_URI, echo=False)
+    # Protection Guard: Extract DB name from URI
+    db_name = settings.SQLALCHEMY_DATABASE_URI.split('/')[-1].split('?')[0]
+    
     async with init_engine.begin() as conn:
+        if not db_name.endswith("_test") and settings.ENVIRONMENT != "test":
+             raise RuntimeError(f"CRITICAL: drop_all blocked! Database '{db_name}' is not a test database.")
+        
         await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
     yield

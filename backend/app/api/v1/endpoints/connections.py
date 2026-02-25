@@ -75,27 +75,26 @@ class SmtpRuleUpdate(BaseModel):
     priority: Optional[int] = None
     is_active: Optional[bool] = None
 
+from app.schemas.monitoring_provider import MonitoringProviderCreate, MonitoringProviderUpdate, ProviderHealthStatus
+
+# Local legacy schemas (kept for ref but moving to centralized ones)
 class ProviderOut(BaseModel):
     id: int
     code: str
     label: str
     ui_color: Optional[str] = None
     is_active: bool
+    # Monitoring fields
+    recovery_email: Optional[str] = None
+    expected_emails_per_day: int = 0
+    expected_frequency_type: str = "daily"
+    silence_threshold_minutes: int = 1440
+    monitoring_enabled: bool = False
     
     class Config:
         from_attributes = True
 
-class ProviderCreate(BaseModel):
-    code: str
-    label: str
-    ui_color: Optional[str] = None
-    is_active: bool = True
-
-class ProviderUpdate(BaseModel):
-    code: Optional[str] = None
-    label: Optional[str] = None
-    ui_color: Optional[str] = None
-    is_active: Optional[bool] = None
+# We can remove ProviderCreate/Update if we use the central ones
 
 
 # ===== Endpoints =====
@@ -242,7 +241,7 @@ async def list_providers(
 
 @router.post("/providers", response_model=ProviderOut)
 async def create_provider(
-    provider_in: ProviderCreate,
+    provider_in: MonitoringProviderCreate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_operator_or_admin)
 ) -> Any:
@@ -254,12 +253,11 @@ async def create_provider(
     if existing_res.scalar_one_or_none():
         raise HTTPException(status_code=400, detail=f"Provider code {code_upper} already exists")
     
-    provider = MonitoringProvider(
-        code=code_upper,
-        label=provider_in.label,
-        ui_color=provider_in.ui_color,
-        is_active=provider_in.is_active
-    )
+    # Use model_dump to get all fields including defaults from MonitoringProviderCreate
+    provider_data = provider_in.model_dump()
+    provider_data['code'] = code_upper
+    
+    provider = MonitoringProvider(**provider_data)
     db.add(provider)
     await db.commit()
     await db.refresh(provider)
@@ -269,7 +267,7 @@ async def create_provider(
 @router.patch("/providers/{provider_id}", response_model=ProviderOut)
 async def update_provider(
     provider_id: int,
-    provider_in: ProviderUpdate,
+    provider_in: MonitoringProviderUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_operator_or_admin)
 ) -> Any:
@@ -281,14 +279,13 @@ async def update_provider(
     if not provider:
         raise HTTPException(status_code=404, detail="Provider not found")
     
-    if provider_in.code is not None:
-        provider.code = provider_in.code.upper()
-    if provider_in.label is not None:
-        provider.label = provider_in.label
-    if provider_in.ui_color is not None:
-        provider.ui_color = provider_in.ui_color
-    if provider_in.is_active is not None:
-        provider.is_active = provider_in.is_active
+    # Update only provided fields
+    update_data = provider_in.model_dump(exclude_unset=True)
+    for field, value in update_data.items():
+        if field == "code" and value is not None:
+            setattr(provider, field, value.upper())
+        else:
+            setattr(provider, field, value)
         
     await db.commit()
     await db.refresh(provider)

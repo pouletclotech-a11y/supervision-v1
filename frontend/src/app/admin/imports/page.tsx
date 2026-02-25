@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import Layout from '../../../components/Layout';
+import { fetchWithAuth } from '@/lib/api';
 import {
     Box,
     Paper,
@@ -54,15 +55,11 @@ export default function ImportsPage() {
     const [inspectionData, setInspectionData] = useState<any>(null);
     const [inspectLoading, setInspectLoading] = useState(false);
 
-    const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
-
     const fetchImports = async () => {
         setLoading(true);
         try {
-            const token = localStorage.getItem('token');
-            const res = await fetch(`${API_URL}/imports/?skip=${page * rowsPerPage}&limit=${rowsPerPage}`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
+            const res = await fetchWithAuth(`/imports?skip=${page * rowsPerPage}&limit=${rowsPerPage}`);
+            if (!res.ok) throw new Error('Failed to fetch imports');
             const data = await res.json();
             setImports(data.imports || []);
             setTotal(data.total || 0);
@@ -82,10 +79,8 @@ export default function ImportsPage() {
         setInspectLoading(true);
         setInspectionData(null);
         try {
-            const token = localStorage.getItem('token');
-            const res = await fetch(`${API_URL}/imports/${imp.id}/inspect`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
+            const res = await fetchWithAuth(`/imports/${imp.id}/inspect`);
+            if (!res.ok) throw new Error('Failed to inspect import');
             const data = await res.json();
             setInspectionData(data);
         } catch (error) {

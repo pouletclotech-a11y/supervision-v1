@@ -2,32 +2,30 @@
 
 import React, { useState, useEffect } from 'react';
 import Layout from '../../components/Layout';
-import { fetchWithAuth } from '../../lib/api';
-import { useAuth } from '../../context/AuthContext';
+import { fetchWithAuth } from '@/lib/api';
+import { useAuth } from '@/context/AuthContext';
 
 import {
     Box,
-    Paper,
     Typography,
+    Paper,
+    Tabs,
+    Tab,
+    Grid,
+    TextField,
+    Button,
+    CircularProgress,
+    Alert,
+    Divider,
+    MenuItem,
     Dialog,
     DialogTitle,
     DialogContent,
     DialogActions,
-    TextField,
-    Button,
-    Tabs,
-    Tab,
-    Alert,
-    CircularProgress,
-    Divider,
-    Grid,
-    MenuItem,
+    IconButton,
     Chip,
-    IconButton
 } from '@mui/material';
 import { Save, Mail, Server, ShieldCheck, Trash2, Plus } from 'lucide-react';
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
 
 interface Setting {
     key: string;
@@ -94,7 +92,7 @@ export default function SettingsPage() {
     const fetchSettings = async () => {
         setLoading(true);
         try {
-            const res = await fetchWithAuth('/settings/');
+            const res = await fetchWithAuth('/settings');
             if (res.ok) {
                 const data: Setting[] = await res.json();
                 const map: Record<string, string> = {};
@@ -225,7 +223,7 @@ export default function SettingsPage() {
         setSaving(true);
         setMessage(null);
         try {
-            const res = await fetchWithAuth('/settings/', {
+            const res = await fetchWithAuth('/settings', {
                 method: 'POST',
                 body: JSON.stringify(settings)
             });
@@ -304,8 +302,8 @@ export default function SettingsPage() {
                 <Paper sx={{ width: '100%', mb: 3 }}>
                     <Tabs value={tab} onChange={(_e: React.SyntheticEvent, v: number) => setTab(v)} sx={{ borderBottom: 1, borderColor: 'divider', px: 2 }}>
                         <Tab label="Email Connector" icon={<Mail size={16} />} iconPosition="start" />
-                        <Tab label="Security & Whitelist" icon={<ShieldCheck size={16} />} iconPosition="start" />
-                        <Tab label="Télésurveilleurs" icon={<ShieldCheck size={16} />} iconPosition="start" />
+                        <Tab label="Security & Whitelist (Deprecated)" icon={<ShieldCheck size={16} />} iconPosition="start" />
+                        {/* Tab 2 (Télésurveilleurs) is hidden as it's replaced by the new Providers page */}
                     </Tabs>
 
                     {loading ? (
@@ -387,17 +385,21 @@ export default function SettingsPage() {
                                 </Grid>
                             )}
 
-                            {/* TAB 1: SECURITY */}
+                            {/* TAB 1: SECURITY (DEPRECATED) */}
                             {tab === 1 && (
                                 <Grid container spacing={3}>
                                     <Grid item xs={12}>
-                                        <Typography variant="h6">Sender Whitelist</Typography>
+                                        <Alert severity="warning" variant="outlined" sx={{ mb: 2 }}>
+                                            <strong>⚠️ Session de transition :</strong> La gestion de la whitelist et des formats est désormais centralisée par <b>Provider</b>.
+                                            Veuillez utiliser la page <a href="/admin/providers">Gestion des Providers</a> pour configurer ces paramètres.
+                                        </Alert>
+                                        <Typography variant="h6" color="text.disabled">Sender Whitelist (Global / Legacy)</Typography>
                                         <Typography variant="caption" color="text.secondary">
-                                            Only emails from these addresses will be processed. JSON Array format.
+                                            Ces paramètres ne sont plus prioritaires sur les règles par provider.
                                         </Typography>
                                     </Grid>
                                     <Grid item xs={12}>
-                                        <Grid item xs={12}>
+                                        <Box sx={{ opacity: 0.6, pointerEvents: 'none' }}>
                                             <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mb: 2 }}>
                                                 {(function () {
                                                     try {
@@ -407,77 +409,24 @@ export default function SettingsPage() {
                                                     <Chip
                                                         key={email}
                                                         label={email}
-                                                        onDelete={() => {
-                                                            try {
-                                                                const current = JSON.parse(settings['whitelist_senders'] || '[]');
-                                                                const updated = current.filter((e: string) => e !== email);
-                                                                handleChange('whitelist_senders', JSON.stringify(updated));
-                                                            } catch (e) {
-                                                                console.error("Error updating whitelist", e);
-                                                            }
-                                                        }}
+                                                        disabled
                                                     />
                                                 ))}
                                             </Box>
                                             <TextField
-                                                label="Add Allowed Email" fullWidth
-                                                value={whitelistInput}
-                                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setWhitelistInput(e.target.value)}
-                                                onKeyDown={(e: React.KeyboardEvent) => {
-                                                    if (e.key === 'Enter') {
-                                                        e.preventDefault();
-                                                        if (!whitelistInput) return;
-                                                        try {
-                                                            const current = JSON.parse(settings['whitelist_senders'] || '[]');
-                                                            if (!current.includes(whitelistInput)) {
-                                                                const updated = [...current, whitelistInput];
-                                                                handleChange('whitelist_senders', JSON.stringify(updated));
-                                                            }
-                                                            setWhitelistInput('');
-                                                        } catch (e) {
-                                                            // Reset if corrupted
-                                                            handleChange('whitelist_senders', JSON.stringify([whitelistInput]));
-                                                            setWhitelistInput('');
-                                                        }
-                                                    }
-                                                }}
-                                                placeholder="noreply@example.com (Press Enter to add)"
-                                                helperText="Only emails from these senders will be processed."
-                                                InputProps={{
-                                                    endAdornment: (
-                                                        <IconButton
-                                                            onClick={() => {
-                                                                if (!whitelistInput) return;
-                                                                try {
-                                                                    const current = JSON.parse(settings['whitelist_senders'] || '[]');
-                                                                    if (!current.includes(whitelistInput)) {
-                                                                        const updated = [...current, whitelistInput];
-                                                                        handleChange('whitelist_senders', JSON.stringify(updated));
-                                                                    }
-                                                                    setWhitelistInput('');
-                                                                } catch (e) {
-                                                                    handleChange('whitelist_senders', JSON.stringify([whitelistInput]));
-                                                                    setWhitelistInput('');
-                                                                }
-                                                            }}
-                                                            edge="end"
-                                                        >
-                                                            <Plus size={20} />
-                                                        </IconButton>
-                                                    )
-                                                }}
+                                                label="Whitelist (Read Only)" fullWidth
+                                                value="Use Provider-specific rules instead"
+                                                disabled
                                             />
-                                        </Grid>
-                                        <Grid item xs={12}>
-                                            <Typography variant="h6" sx={{ mt: 2 }}>Attachment Filter</Typography>
-                                        </Grid>
-                                        <Grid item xs={12}>
-                                            <TextField
-                                                label="Allowed Extensions (JSON)" fullWidth
-                                                value={settings['attachment_types'] || '["pdf", "xlsx", "xls"]'}
-                                                onChange={(e: React.ChangeEvent<HTMLInputElement>) => handleChange('attachment_types', e.target.value)}
-                                            />
-                                        </Grid>
+                                        </Box>
+
+                                        <Typography variant="h6" sx={{ mt: 2 }} color="text.disabled">Attachment Filter (Legacy)</Typography>
+                                        <TextField
+                                            label="Allowed Extensions (JSON)" fullWidth
+                                            value={settings['attachment_types'] || '["pdf", "xlsx", "xls"]'}
+                                            disabled
+                                            sx={{ opacity: 0.6 }}
+                                        />
                                     </Grid>
                                 </Grid>
                             )}

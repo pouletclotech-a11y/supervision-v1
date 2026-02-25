@@ -14,13 +14,9 @@ import {
     Stack
 } from '@mui/material';
 import { Play, CheckCircle, XCircle, FileText } from 'lucide-react';
-
-import { fetchWithAuth } from '../lib/api';
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
+import { fetchWithAuth } from '@/lib/api';
 
 export default function RuleTester() {
-    // ... (rest of state)
     // RULE DEFINITION STATE
     const [conditionType, setConditionType] = useState('KEYWORD');
     const [value, setValue] = useState('');
@@ -34,16 +30,9 @@ export default function RuleTester() {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    const handleLoadSample = (type: 'valid' | 'invalid') => {
+    const handleLoadSample = (type: string) => {
         if (type === 'valid') {
-            setText("2024-01-29 10:00:00 | C-69000 | ALARM | ZONE 1 | Intrusion detected at Main Door");
-            setConditionType('KEYWORD');
-            setValue('Intrusion');
-            setScopeSite('C-69000');
-        } else {
-            setText("2024-01-29 10:00:00 | C-69000 | INFO | System Armed");
-            setConditionType('SEVERITY');
-            setValue('CRITICAL');
+            setText("2024-03-24 10:00:00 [CRITICAL] Sensor C-69000 failure detected");
         }
     };
 

@@ -233,6 +233,20 @@ class MonitoringProvider(Base):
     label: Mapped[str] = mapped_column(String(100))  # Affichage UI
     ui_color: Mapped[Optional[str]] = mapped_column(String(20)) # Hex color or CSS color
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    
+    # Phase 2.B: Monitoring Layer
+    recovery_email: Mapped[Optional[str]] = mapped_column(String(255))
+    expected_emails_per_day: Mapped[int] = mapped_column(Integer, default=0)
+    expected_frequency_type: Mapped[str] = mapped_column(String(20), default='daily')
+    silence_threshold_minutes: Mapped[int] = mapped_column(Integer, default=1440)
+    monitoring_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    last_successful_import_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    
+    # Phase Architecture: Security & Refined Monitoring
+    accepted_attachment_types: Mapped[dict] = mapped_column(JSONB, default=["pdf", "xls", "xlsx"])
+    email_match_keyword: Mapped[Optional[str]] = mapped_column(String(255))
+    expected_interval_minutes: Mapped[Optional[int]] = mapped_column(Integer)
+    
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 class SmtpProviderRule(Base):
@@ -243,6 +257,11 @@ class SmtpProviderRule(Base):
     match_type: Mapped[str] = mapped_column(String(20))  # EXACT, DOMAIN, REGEX
     match_value: Mapped[str] = mapped_column(String(255))  # email, domain, pattern
     priority: Mapped[int] = mapped_column(Integer, default=0)  # Higher = tested first
+    
+    # Provider-Centric Security (v2): Frequency per rule
+    expected_emails_per_day: Mapped[Optional[int]] = mapped_column(Integer)
+    expected_interval_minutes: Mapped[Optional[int]] = mapped_column(Integer)
+
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

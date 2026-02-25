@@ -8,8 +8,10 @@ import hashlib
 import uuid
 from pathlib import Path
 from datetime import datetime
+from typing import Optional, List, Any
 
 from app.core.config import settings
+from app.db.models import ImportLog
 from app.parsers.factory import ParserFactory
 from app.parsers.excel_parser import ExcelParser
 from app.parsers.pdf_parser import PdfParser
@@ -58,10 +60,11 @@ async def get_redis_client():
     return redis.from_url(f"redis://{settings.POSTGRES_SERVER.replace('db', 'redis')}:6379", encoding="utf-8", decode_responses=True)
 
 
-async def process_ingestion_item(adapter: BaseAdapter, item: AdapterItem, redis_lock: RedisLock, redis_client, poll_run_id: str = ""):
+async def process_ingestion_item(adapter: BaseAdapter, item: AdapterItem, redis_lock: RedisLock, redis_client, poll_run_id: str = "", existing_import_id: int = None) -> Optional[int]:
     """
     Refactored ingestion pipeline (Phase 3).
     Handles: Hash -> Lock -> Profile Match -> Parse -> DB -> Archive -> Unlock.
+    Returns primary_import_id on success.
     """
     file_path = Path(item.path)
     
@@ -70,14 +73,14 @@ async def process_ingestion_item(adapter: BaseAdapter, item: AdapterItem, redis_
         item.sha256 = compute_sha256(file_path)
     except Exception as e:
         logger.error(f"[METRIC] event=import_error adapter={adapter.__class__.__name__} run_id={poll_run_id} file={item.filename} reason=hash_failed: {e}")
-        return
+        return None
 
     # 2. Acquire Redis Lock
     lock_key = f"ingestion:lock:file:{item.sha256}"
     lock_token = str(time.time())
     if not await redis_lock.acquire(lock_key, lock_token):
         logger.info(f"[{adapter.__class__.__name__}] Locked, skipping: {item.filename}")
-        return
+        return None
 
     try:
         async with AsyncSessionLocal() as session:
@@ -85,10 +88,15 @@ async def process_ingestion_item(adapter: BaseAdapter, item: AdapterItem, redis_
             
             # 3. Idempotence Check (SHA256 in DB)
             existing_import = await repo.get_import_by_hash(item.sha256)
-            if existing_import and existing_import.status == "SUCCESS":
-                logger.info(f"[METRIC] run_id={poll_run_id} event=import_duplicate adapter={adapter.__class__.__name__} file={item.filename} sha256={item.sha256[:8]}")
-                await adapter.ack_duplicate(item, existing_import.id)
-                return
+            is_replay = False
+            if existing_import:
+                if existing_import.status == "SUCCESS":
+                    logger.info(f"[METRIC] run_id={poll_run_id} event=import_duplicate adapter={adapter.__class__.__name__} file={item.filename} sha256={item.sha256[:8]}")
+                    await adapter.ack_duplicate(item, existing_import.id)
+                    return existing_import.id
+                elif existing_import.status == "REPLAY_REQUESTED":
+                    logger.info(f"[REPLAY] Hash match found for {item.filename} with REPLAY_REQUESTED status. Starting transactional replace.")
+                    is_replay = True
 
             # 4. Classification de l'import (SMTP Provider)
             sender_email = item.metadata.get('sender_email')
@@ -134,7 +142,7 @@ async def process_ingestion_item(adapter: BaseAdapter, item: AdapterItem, redis_
                 await repo.update_import_log(import_log.id, "PROFILE_NOT_CONFIDENT", 0, 0, "No profile reached confidence threshold")
                 await session.commit()
                 await adapter.ack_unmatched(item, "Profile confidence too low")
-                return
+                return import_log.id
 
             logger.info(f"[{adapter.__class__.__name__}] Match Confidence OK: '{profile.profile_id}' (Score: {match_report['best_score']})")
             
@@ -148,16 +156,58 @@ async def process_ingestion_item(adapter: BaseAdapter, item: AdapterItem, redis_
                 await repo.update_import_log(import_log.id, "ERROR", 0, 0, error_msg)
                 await session.commit()
                 await adapter.ack_error(item, error_msg)
-                return
+                return None
 
             # 6. Full Processing
-            import_log = await repo.create_import_log(item.filename, file_hash=item.sha256)
+            if existing_import_id:
+                import_log = await repo.session.get(ImportLog, existing_import_id)
+            elif is_replay:
+                import_log = existing_import
+            else:
+                import_log = await repo.create_import_log(item.filename, file_hash=item.sha256)
+                
             import_log.adapter_name = item.source
             import_log.provider_id = resolved_provider_id
             if hasattr(item, 'source_message_id') and item.source_message_id:
                 import_log.source_message_id = item.source_message_id
+
+            # REPLAY CLEANUP: Delete old events within this transaction if replaying
+            if is_replay:
+                from sqlalchemy import delete
+                from app.db.models import Event
+                await session.execute(delete(Event).where(Event.import_id == import_log.id))
+                logger.info(f"[REPLAY] Cleared previous events for Import {import_log.id}")
             
             try:
+                # Phase 4 (Minimal): If we have an existing import (Grouping), PDF is support only
+                ext = file_path.suffix.lower()
+                if existing_import_id and ext == '.pdf':
+                    import_log_primary = await repo.session.get(ImportLog, existing_import_id)
+                    
+                    # Fallback logic: if XLS (primary) has 0 events, we extract from PDF instead of just linking it
+                    if import_log_primary and import_log_primary.events_count == 0:
+                        logger.info(f"[Fallback] XLS Import {existing_import_id} was empty. Attempting PDF extraction from {item.filename}")
+                        # Update metadata to track fallback
+                        meta = dict(import_log_primary.import_metadata or {})
+                        meta["fallback_from_xls"] = True
+                        meta["actual_source"] = "pdf"
+                        import_log_primary.import_metadata = meta
+                        # Do NOT return, proceed to extraction below
+                    else:
+                        logger.info(f"PDF Grouping: Linking {item.filename} as support for Import {existing_import_id}")
+                        # Phase B1: Link PDF to existing XLS import using ORM
+                        if import_log_primary:
+                            import_log_primary.pdf_path = str(file_path)
+                            meta = dict(import_log_primary.import_metadata or {})
+                            meta["pdf_support"] = str(item.filename)
+                            import_log_primary.import_metadata = meta
+                            await repo.session.commit()
+                            
+                        await repo.update_provider_last_import(resolved_provider_id, datetime.utcnow())
+                        await session.commit()
+                        await adapter.ack_success(item, existing_import_id)
+                        return existing_import_id
+
                 # Pass parser_config (Phase 3 abstraction)
                 parse_result = parser.parse(
                     str(file_path), 
@@ -178,8 +228,17 @@ async def process_ingestion_item(adapter: BaseAdapter, item: AdapterItem, redis_
                 for event in events:
                     normalizer.normalize(event)
                     await tagging_service.tag_event(event) # This includes site code normalization
+                    
+                    # For REPLAY, we might still want to deduplicate against OTHER imports,
+                    # but maybe we should be more lenient? 
+                    # Decision: bypass deduplication during replay to ensure we replace correctly
+                    # OR keep it to maintain consistency? 
+                    # User: "replay recalculates and replaces properly".
+                    # If we keep it, and they were duplicates initially, they remain duplicates.
+                    # BUT, if we fixed the parser, maybe they aren't duplicates anymore.
+                    
                     is_dup = await dedup_service.is_duplicate(event)
-                    if not is_dup:
+                    if not is_dup or is_replay: # Force processing in replay mode
                         unique_events.append(event)
                         # Phase 2.A: Actualiser le compteur business (raccordement site)
                         await repo.upsert_site_connection(
@@ -193,27 +252,44 @@ async def process_ingestion_item(adapter: BaseAdapter, item: AdapterItem, redis_
                         duplicates_count += 1
                 
                 # DB Insert
+                inserted_db_count = 0
                 if unique_events:
-                    await repo.create_batch(unique_events, import_id=import_log.id)
+                    inserted_db_count = await repo.create_batch(unique_events, import_id=import_log.id)
                     try:
                         incident_service = IncidentService(session)
                         await incident_service.process_batch_incidents(import_log.id)
                     except Exception as inc_err:
                         logger.error(f"Incident reconstruction failed: {inc_err}")
 
-                await repo.update_import_log(import_log.id, "SUCCESS", len(unique_events), duplicates_count)
+                # Metrics persistence
+                meta = dict(import_log.import_metadata or {})
+                metrics = {
+                    "extracted": len(events),
+                    "dedup_kept": len(unique_events),
+                    "inserted_db": inserted_db_count
+                }
+                meta["metrics"] = metrics
+                import_log.import_metadata = meta
+
+                logger.info(f"[METRIC] import_id={import_log.id} status=SUCCESS extracted={metrics['extracted']} dedup_kept={metrics['dedup_kept']} inserted_db={metrics['inserted_db']}")
+                
+                await repo.update_import_log(import_log.id, "SUCCESS", inserted_db_count, duplicates_count)
+                # Phase 2.B: Update monitoring last success
+                await repo.update_provider_last_import(resolved_provider_id, datetime.utcnow())
                 await session.commit()
                 await adapter.ack_success(item, import_log.id)
+                return import_log.id
 
             except Exception as e:
                 error_msg = f"Crash during processing: {str(e)}"
                 logger.error(f"[METRIC] event=import_error adapter={adapter.__class__.__name__} run_id={poll_run_id} reason={error_msg}", exc_info=True)
-                await repo.update_import_log(import_log.id, "ERROR", 0, 0, error_msg)
                 await session.commit()
                 await adapter.ack_error(item, error_msg)
+                return None
 
     except Exception as e:
         logger.error(f"[METRIC] event=import_fatal run_id={poll_run_id} file={item.filename} reason={e}", exc_info=True)
+        return None
     finally:
         await redis_lock.release(lock_key, lock_token)
 
@@ -230,8 +306,35 @@ async def worker_loop():
         logger.info(f"[METRIC] event=poll_cycle_start run_id={poll_run_id}")
 
         try:
+            items_by_msg = {} # source_message_id -> list[(adapter, item)]
+            orphans = []
+            
             async for adapter, item in registry.poll_all():
+                msg_id = item.source_message_id
+                if msg_id:
+                    if msg_id not in items_by_msg:
+                        items_by_msg[msg_id] = []
+                    items_by_msg[msg_id].append((adapter, item))
+                else:
+                    orphans.append((adapter, item))
+            
+            # 1. Process Groups (Fusion V1)
+            for msg_id, group in items_by_msg.items():
+                logger.info(f"[Group] Processing email group {msg_id} ({len(group)} items)")
+                # Sort: XLS first
+                group.sort(key=lambda x: 0 if x[1].filename.lower().endswith(('.xls', '.xlsx')) else 1)
+                
+                primary_id = None
+                for adapter, item in group:
+                    # process_ingestion_item now returns primary_id or None
+                    res_id = await process_ingestion_item(adapter, item, redis_lock, redis_client, poll_run_id=poll_run_id, existing_import_id=primary_id)
+                    if res_id and not primary_id:
+                        primary_id = res_id
+            
+            # 2. Process Orphans
+            for adapter, item in orphans:
                 await process_ingestion_item(adapter, item, redis_lock, redis_client, poll_run_id=poll_run_id)
+
         except Exception as e:
             logger.error(f"[METRIC] event=poll_cycle_error run_id={poll_run_id} reason={e}", exc_info=True)
 

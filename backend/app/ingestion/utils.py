@@ -47,9 +47,15 @@ def get_file_probe(file_path: Path) -> Tuple[Optional[List[str]], Optional[str]]
 
                 with open(file_path, 'r', encoding='latin-1', errors='replace') as f:
                     reader = csv.reader(f, delimiter='\t')
-                    first_row = next(reader, None)
-                    if first_row:
-                        headers = [clean_excel_value(c) for c in first_row if c]
+                    # V1 Minimal: Scan up to 20 lines to skip empty leading rows
+                    for _ in range(20):
+                        row = next(reader, None)
+                        if row is None: 
+                            break
+                        row_headers = [clean_excel_value(c) for c in row if c]
+                        if row_headers:
+                            headers = row_headers
+                            break
         
         elif ext == '.pdf':
             import pdfplumber

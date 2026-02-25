@@ -8,8 +8,8 @@ import {
     TablePagination, Chip, Select, MenuItem, FormControl, InputLabel
 } from '@mui/material';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
-import { useAuth } from '../../../context/AuthContext';
-import { fetchWithAuth } from '../../../utils/api';
+import { useAuth } from '@/context/AuthContext';
+import { fetchWithAuth } from '@/lib/api';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface ProviderSummary {
@@ -17,6 +17,18 @@ interface ProviderSummary {
     provider_code: string;
     total_sites: number;
     total_events: number;
+}
+
+interface ProviderHealth {
+    id: number;
+    code: string;
+    label: string;
+    status: 'OK' | 'LATE' | 'SILENT' | 'UNCONFIGURED';
+    received_24h: number;
+    expected_24h: number;
+    completion_rate: number | null;
+    last_successful_import_at: string | null;
+    ui_color: string | null;
 }
 
 interface TimeseriesPoint {
@@ -67,10 +79,61 @@ function SummaryCard({ data }: { data: ProviderSummary }) {
     );
 }
 
+const STATUS_COLORS: Record<string, string> = {
+    OK: '#22c55e',
+    LATE: '#f59e0b',
+    SILENT: '#ef4444',
+    UNCONFIGURED: '#6b7280',
+};
+
+const STATUS_LABELS: Record<string, string> = {
+    OK: 'Opérationnel',
+    LATE: 'En retard',
+    SILENT: 'Silence critique',
+    UNCONFIGURED: 'Non configuré',
+};
+
+function HealthStatusCard({ data }: { data: ProviderHealth }) {
+    const statusColor = STATUS_COLORS[data.status] || '#6b7280';
+    return (
+        <Paper sx={{ p: 2, borderRadius: 3, bgcolor: '#f9fafb' }}>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                <Typography variant="subtitle2" fontWeight={700}>{data.label}</Typography>
+                <Chip
+                    label={STATUS_LABELS[data.status]}
+                    size="small"
+                    sx={{ bgcolor: statusColor, color: '#fff', fontSize: 10, fontWeight: 700 }}
+                />
+            </Box>
+            <Box sx={{ mb: 1 }}>
+                <Typography variant="caption" color="text.secondary">Complétion (24h)</Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <Box sx={{ flexGrow: 1, height: 4, bgcolor: '#e5e7eb', borderRadius: 2, position: 'relative' }}>
+                        <Box sx={{
+                            position: 'absolute',
+                            height: '100%',
+                            width: `${Math.min((data.completion_rate || 0) * 100, 100)}%`,
+                            bgcolor: statusColor,
+                            borderRadius: 2
+                        }} />
+                    </Box>
+                    <Typography variant="caption" fontWeight={700}>
+                        {data.received_24h}/{data.expected_24h}
+                    </Typography>
+                </Box>
+            </Box>
+            <Typography variant="caption" color="text.secondary" display="block">
+                Dernier import : {data.last_successful_import_at ? new Date(data.last_successful_import_at).toLocaleString('fr-FR') : 'Jamais'}
+            </Typography>
+        </Paper>
+    );
+}
+
 export default function BusinessMetricsPage() {
     const { user } = useAuth();
 
     const [summary, setSummary] = useState<ProviderSummary[]>([]);
+    const [health, setHealth] = useState<ProviderHealth[]>([]);
     const [timeseries, setTimeseries] = useState<TimeseriesPoint[]>([]);
     const [sites, setSites] = useState<SiteRow[]>([]);
     const [total, setTotal] = useState(0);
@@ -81,14 +144,20 @@ export default function BusinessMetricsPage() {
     const [error, setError] = useState('');
 
     const loadSummary = useCallback(async () => {
-        const res = await fetchWithAuth(`${process.env.NEXT_PUBLIC_API_URL}/api/v1/admin/business/summary`);
+        const res = await fetchWithAuth('/admin/business/summary');
         if (!res.ok) throw new Error('Summary fetch failed');
+        return res.json();
+    }, []);
+
+    const loadHealth = useCallback(async () => {
+        const res = await fetchWithAuth('/admin/business/providers/health');
+        if (!res.ok) throw new Error('Health fetch failed');
         return res.json();
     }, []);
 
     const loadTimeseries = useCallback(async () => {
         const res = await fetchWithAuth(
-            `${process.env.NEXT_PUBLIC_API_URL}/api/v1/admin/business/timeseries?granularity=${granularity}`
+            `/admin/business/timeseries?granularity=${granularity}`
         );
         if (!res.ok) throw new Error('Timeseries fetch failed');
         return res.json();
@@ -96,7 +165,7 @@ export default function BusinessMetricsPage() {
 
     const loadSites = useCallback(async () => {
         const res = await fetchWithAuth(
-            `${process.env.NEXT_PUBLIC_API_URL}/api/v1/admin/business/sites?page=${page + 1}&size=${rowsPerPage}`
+            `/admin/business/sites?page=${page + 1}&size=${rowsPerPage}`
         );
         if (!res.ok) throw new Error('Sites fetch failed');
         return res.json() as Promise<SitesResponse>;
@@ -104,9 +173,10 @@ export default function BusinessMetricsPage() {
 
     useEffect(() => {
         setLoading(true);
-        Promise.all([loadSummary(), loadTimeseries(), loadSites()])
-            .then(([sumData, tsData, sitesData]) => {
+        Promise.all([loadSummary(), loadHealth(), loadTimeseries(), loadSites()])
+            .then(([sumData, healthData, tsData, sitesData]) => {
                 setSummary(sumData);
+                setHealth(healthData);
                 setTimeseries(tsData.map((t: TimeseriesPoint) => ({
                     ...t,
                     period: new Date(t.period).toLocaleDateString('fr-FR', {
@@ -119,7 +189,7 @@ export default function BusinessMetricsPage() {
             })
             .catch(e => setError(e.message))
             .finally(() => setLoading(false));
-    }, [loadSummary, loadTimeseries, loadSites, granularity]);
+    }, [loadSummary, loadHealth, loadTimeseries, loadSites, granularity]);
 
     if (loading) return (
         <Layout>
@@ -135,16 +205,32 @@ export default function BusinessMetricsPage() {
                 {/* Header */}
                 <Box sx={{ mb: 4 }}>
                     <Typography variant="h5" fontWeight={700}>
-                        📊 Métriques Business — Raccordements
+                        📊 Métriques Business & Santé des Flux
                     </Typography>
                     <Typography variant="body2" color="text.secondary">
-                        Comptage des codes site distincts par télésurveilleur
+                        Comptage des raccordements et surveillance de la régularité par télésurveilleur
                     </Typography>
                 </Box>
 
                 {error && <Alert severity="error" sx={{ mb: 3 }}>{error}</Alert>}
 
+                {/* Health Monitoring Section (Phase 2.B) */}
+                <Typography variant="h6" fontWeight={700} sx={{ mb: 2 }}>💓 Santé des Flux</Typography>
+                <Grid container spacing={2} sx={{ mb: 4 }}>
+                    {health.map((h) => (
+                        <Grid item xs={12} sm={6} md={3} key={h.code}>
+                            <HealthStatusCard data={h} />
+                        </Grid>
+                    ))}
+                    {health.length === 0 && (
+                        <Grid item xs={12}>
+                            <Typography variant="body2" color="text.secondary">Aucun monitoring actif.</Typography>
+                        </Grid>
+                    )}
+                </Grid>
+
                 {/* Summary Widgets */}
+                <Typography variant="h6" fontWeight={700} sx={{ mb: 2 }}>🏬 État du Parc</Typography>
                 <Grid container spacing={2} sx={{ mb: 4 }}>
                     {summary.map((s) => (
                         <Grid item xs={12} sm={6} md={3} key={s.provider_code}>

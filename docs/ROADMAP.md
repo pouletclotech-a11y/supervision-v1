@@ -26,25 +26,27 @@ Mise en place du layer de comptage des raccordements (codes site distincts) par 
 
 ---
 
-## Phase 2.B — Provider Monitoring Layer (Future Work)
-**Status**: `PLANNED` | **Cible**: À planifier
+## Phase 2.B — Provider Monitoring Layer
+**Status**: `✅ TERMINÉE` | **Livré le**: 2026-02-23
 
-Renforcement du module `MonitoringProvider` avec des paramètres opérationnels pour détecter les anomalies de flux.
+Renforcement du module `MonitoringProvider` avec des paramètres opérationnels pour surveiller la “santé du flux” et détecter les anomalies de réception.
+- [x] Bugfix : NotNullViolation sur Monitoring Providers (Phase 2.B)
 
 ### 1. Évolutions du Modèle (MonitoringProvider)
-- **recovery_email** : Email de contact pour les alertes de flux.
-- **expected_emails_per_day** : Nombre d'emails/imports attendu par jour.
-- **expected_frequency_type** : `daily`, `weekly`, or `custom`.
-- **monitoring_enabled** : Activation/Désactivation de la surveillance pour ce provider.
+- **recovery_email** : Contact technique pour les alertes de santé du flux.
+- **expected_emails_per_day** : Seuil nominal d'imports/emails attendus par 24h.
+- **expected_frequency_type** : Granularité de surveillance (`daily`, `weekly`).
+- **silence_threshold_minutes** : Fenêtre de tolérance avant déclenchement d'alerte de silence (par défaut 1440m = 24h).
+- **last_successful_import_at** : Timestamp du dernier succès pour calcul efficace du silence.
 
-### 2. Logique Métier
-- **Détection de silence** : Alerte si aucun import n'est reçu sur la période attendue.
-- **Vérification de volume** : Comparaison du nombre d'imports réels vs `expected_emails_per_day`.
-- **Notifications** : Envoi d'alertes vers le `recovery_email` ou génération d'incidents internes.
+### 2. Logique de Surveillance
+- **Calcul "Attendu vs Reçu"** : Comparaison volumétrique sur 24h glissantes.
+- **Détection de Silence** : Alerte automatique si `now() - last_successful_import_at > threshold`.
+- **Incidents Flux** : Création d'événements `SYSTEM_SILENCE` et incidents internes visibles sur le dashboard.
 
-### 3. Interface Admin
-- **Paramétrage** : Gestion des seuils dans `Admin > Providers`.
-- **Health Dashboard** : Widget "Flux attendu vs reçu" pour une visualisation rapide de la santé opérationnelle.
+### 3. Interface Admin & Monitoring
+- **Configuration** : Nouveaux champs dans `Admin > Providers`.
+- **Health Dashboard** : Widget "Santé des Flux" avec codes couleurs (Vert/Orange/Rouge) et jauges de complétion par provider.
 
 ---
 

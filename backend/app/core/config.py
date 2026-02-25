@@ -8,8 +8,14 @@ class Settings(BaseSettings):
     APP_SHORTNAME: str = "TLS"
     PROJECT_NAME: str = "TLS Supervision"
     API_V1_STR: str = "/api/v1"
+    ENVIRONMENT: str = "production" # production | development
     DEFAULT_DISPLAY_TIMEZONE: str = "Europe/Paris"
     PROFILE_SOURCE_MODE: str = "DB_FALLBACK_YAML" # DB_ONLY | DB_FALLBACK_YAML
+    
+    # Admin Seed Configuration
+    DEFAULT_ADMIN_EMAIL: str = "admin@supervision.local"
+    DEFAULT_ADMIN_PASSWORD: str | None = None
+    AUTO_SEED_ADMIN: bool = True
     
     # BACKEND_CORS_ORIGINS is a JSON-formatted list of origins
     # e.g: '["http://localhost", "http://localhost:4200", "http://localhost:3000"]'
@@ -22,6 +28,16 @@ class Settings(BaseSettings):
         elif isinstance(v, (list, str)):
             return v
         raise ValueError(v)
+
+    @validator("DEFAULT_ADMIN_PASSWORD", pre=True, always=True)
+    def validate_admin_password(cls, v: str | None, values: dict) -> str | None:
+        env = values.get("ENVIRONMENT", "production")
+        if env == "production" and not v:
+            # En prod, on ne met pas de valeur par défaut
+            return None
+        if not v and env == "development":
+            return "SuperSecurePassword123"
+        return v
 
     POSTGRES_SERVER: str = "db"
     POSTGRES_USER: str = "admin"
