@@ -41,8 +41,8 @@ class PdfParser(BaseParser):
         RE_SITE_CODE_NUM = r'^(?:SITE\s*:\s*)?(\d{8,})\s+(.*)$'
         
         # Event Header: "Mar 27/01/2026 16:24:25 TYPE" OR "LU02/02/2026 09:37:02..."
-        # Updated to handle optional space and 2-char day names
-        RE_EVENT_HEADER = r'^(Lun|Mar|Mer|Jeu|Ven|Sam|Dim|LU|MA|ME|JE|VE|SA|DI|Di|Lu|Ma|Me|Je|Ve|Sa)\s*(\d{2}/\d{2}/\d{4}\s+\d{2}:\d{2}:\d{2})\s+(.*)$'
+        # Regex updated to capture Day, Date, Time, and potential Code prefix
+        RE_EVENT_HEADER = r'^(Lun|Mar|Mer|Jeu|Ven|Sam|Dim|LU|MA|ME|JE|VE|SA|DI|Di|Lu|Ma|Me|Je|Ve|Sa)\s*(\d{2}/\d{2}/\d{4})\s*(\d{2}:\d{2}:\d{2})\s*(.*)$'
         
         # Sub Event: "16:24:28 Message..."
         RE_SUB_EVENT = r'^(\d{2}:\d{2}:\d{2})\s+(.*)$'
@@ -97,28 +97,53 @@ class PdfParser(BaseParser):
                         # 2. Detect Event Header
                         match_header = re.match(RE_EVENT_HEADER, line)
                         if match_header:
+                            day_label = match_header.group(1).upper()[:3]
                             date_str = match_header.group(2)
-                            remainder = match_header.group(3)
+                            time_str = match_header.group(3)
+                            remainder = match_header.group(4).strip()
                             
                             try:
-                                ts = datetime.strptime(date_str, "%d/%m/%Y %H:%M:%S")
-                                last_event_date = ts
+                                ts_naive = datetime.strptime(f"{date_str} {time_str}", "%d/%m/%Y %H:%M:%S")
+                                last_event_date = ts_naive
                                 
-                                # Remainder might contain Type, SubType, Message
-                                # Needs more heuristic splitting if tab structure is lost
-                                # For V1 assume remainder is the Event Type/Message
+                                # State & Code Extraction from remainder
+                                state = "UNKNOWN"
+                                alarm_code = None
                                 
+                                # State mapping
+                                upper_rem = remainder.upper()
+                                if "APPARITION" in upper_rem: state = "APPARITION"
+                                elif "DISPARITION" in upper_rem: state = "DISPARITION"
+                                elif "EXPIRATION" in upper_rem: state = "EXPIRATION"
+                                elif "MISE EN SERVICE" in upper_rem: state = "MISE_EN_SERVICE"
+                                elif "MISE HORS SERVICE" in upper_rem: state = "MISE_HORS_SERVICE"
+
+                                # Code detection (starts with $ or pattern digits-suffix)
+                                match_code = re.search(r'\$([\w-]+)|(\d{5,}-[\w-]+)', remainder)
+                                if match_code:
+                                    alarm_code = match_code.group(0).replace('$', '')
+                                
+                                # Operator Action detection
+                                is_operator = remainder.startswith("$") or "MODIFICATION DE DOSSIER" in upper_rem
+
                                 event = NormalizedEvent(
-                                    timestamp=self._normalize_timestamp(ts, source_timezone),
+                                    timestamp=self._normalize_timestamp(ts_naive, source_timezone),
                                     site_code=current_site_code,
                                     client_name=current_site_name,
                                     secondary_code=current_site_secondary,
-                                    event_type="PDF_EVENT", # Hard to parse strict columns in PDF text
+                                    weekday_label=day_label,
+                                    event_type="OPERATOR_ACTION" if is_operator else "PDF_EVENT",
                                     raw_message=remainder,
-                                    status="INFO",
+                                    raw_code=alarm_code,
+                                    status="ALARM" if state == "APPARITION" else "INFO",
                                     source_file=file_path,
                                     tenant_id="default-tenant"
                                 )
+                                event.metadata = {
+                                    "state": state,
+                                    "raw_line": line,
+                                    "is_operator": is_operator
+                                }
                                 events.append(event)
                             except ValueError:
                                 pass
@@ -134,6 +159,11 @@ class PdfParser(BaseParser):
                                 t_part = datetime.strptime(time_str, "%H:%M:%S").time()
                                 full_ts = datetime.combine(last_event_date.date(), t_part)
                                 
+                                # State check on sub message too
+                                state = "UNKNOWN"
+                                if "APPARITION" in message.upper(): state = "APPARITION"
+                                elif "DISPARITION" in message.upper(): state = "DISPARITION"
+                                
                                 sub_event = NormalizedEvent(
                                     timestamp=self._normalize_timestamp(full_ts, source_timezone),
                                     site_code=current_site_code,
@@ -146,6 +176,7 @@ class PdfParser(BaseParser):
                                     source_file=file_path,
                                     tenant_id="default-tenant"
                                 )
+                                sub_event.metadata = {"raw_line": line, "state": state}
                                 events.append(sub_event)
                             except ValueError:
                                 pass

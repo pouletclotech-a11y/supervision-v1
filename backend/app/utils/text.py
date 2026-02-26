@@ -1,3 +1,4 @@
+from typing import Any
 import unicodedata
 import re
 
@@ -24,8 +25,14 @@ def normalize_text(text: str) -> str:
     
     return text
 
-def clean_excel_value(val: str) -> str:
-    """Just strips the ="..." without full normalization (for raw storage)."""
-    if val.startswith('="') and val.endswith('"'):
-        return val[2:-1].strip()
-    return val.strip()
+def clean_excel_value(val: Any) -> Any:
+    """Strips the ="..." and normalizes spaces."""
+    if not isinstance(val, str):
+        return val
+    
+    # Strip Excel-style wrapping ="..." (can be multiple)
+    while val.startswith('="') and val.endswith('"'):
+        val = val[2:-1]
+    
+    # Strip and normalize internal spaces
+    return " ".join(val.strip().split())

@@ -76,6 +76,7 @@ class IncidentService:
         stmt = (
             select(Event)
             .where(Event.import_id == import_id)
+            .where(Event.event_type != 'OPERATOR_ACTION')
             .order_by(Event.time.asc(), Event.id.asc())
         )
         result = await self.session.execute(stmt)

@@ -116,14 +116,15 @@ class ExcelParser(BaseParser):
         if is_histo:
             return self._process_row_histo(clean_row, row_idx, file_path, ctx_site_code, ctx_client_name, ctx_day, ctx_date, source_timezone)
         
-        col_a, col_b, col_c, col_d, col_e, col_f = clean_row[:6]
+        col_a, col_b, col_c, col_d, col_e, col_f = [clean_excel_value(c) for c in clean_row[:6]]
 
         # --- 1. SITE_CODE PROPAGATION (Col A) ---
         if col_a:
             col_a_clean = str(col_a).strip()
+            # Match digits-only or C-digits, but keep original if it looks like a code
             site_match = re.match(r'^(C-)?(\d+)$', col_a_clean)
             if site_match:
-                ctx_site_code = site_match.group(2) # Extract only digits (e.g. 69000 from C-69000)
+                ctx_site_code = site_match.group(2) 
                 # Client name is usually in Col B of the header row
                 if col_b and str(col_b).upper()[:3] not in ["LUN", "MAR", "MER", "JEU", "VEN", "SAM", "DIM"]:
                     ctx_client_name = str(col_b).strip()
@@ -152,11 +153,20 @@ class ExcelParser(BaseParser):
         # --- 4. ACTION & DETAILS (Col D & F) ---
         action = str(col_d).strip()
         details = str(col_f).strip()
+        raw_code = str(col_e).strip() if col_e and str(col_e).lower() != 'nan' else None
 
         # --- 5. EVENT GENERATION ---
         if not ts or not action or not ctx_site_code or action.lower() == 'nan':
             return None, ctx_site_code, ctx_client_name, ctx_day, ctx_date
         
+        # State mapping
+        state = "UNKNOWN"
+        if "APPARITION" in action.upper(): state = "APPARITION"
+        elif "DISPARITION" in action.upper(): state = "DISPARITION"
+        elif "EXPIRATION" in action.upper(): state = "EXPIRATION"
+        elif "MISE EN SERVICE" in action.upper(): state = "MISE_EN_SERVICE"
+        elif "MISE HORS SERVICE" in action.upper(): state = "MISE_HORS_SERVICE"
+
         event = NormalizedEvent(
             timestamp=self._normalize_timestamp(ts, source_timezone),
             site_code=ctx_site_code,
@@ -165,8 +175,8 @@ class ExcelParser(BaseParser):
             event_type=action,
             raw_message=f"{action} | {details}" if details and details.lower() != 'nan' else action,
             normalized_message=normalize_text(f"{action} | {details}" if details and details.lower() != 'nan' else action),
-            raw_code=str(col_e).strip() if col_e and str(col_e).lower() != 'nan' else None,
-            status="ALARM" if "APPARITION" in action.upper() else "INFO",
+            raw_code=raw_code,
+            status="ALARM" if state == "APPARITION" else "INFO",
             source_file=file_path,
             row_index=row_idx,
             raw_data=json.dumps(clean_row if isinstance(clean_row, list) else []),
@@ -176,7 +186,8 @@ class ExcelParser(BaseParser):
         event.metadata = {
             "raw_action": action,
             "raw_details": details,
-            "col_e": col_e
+            "col_e": col_e,
+            "state": state
         }
         
         return event, ctx_site_code, ctx_client_name, ctx_day, ctx_date
@@ -189,11 +200,11 @@ class ExcelParser(BaseParser):
         # Col 7: Action (APPARITION, etc.)
         # Col 8: Message
         
-        col_site = str(clean_row[0]).strip()
-        col_client = str(clean_row[1]).strip()
+        col_site = str(clean_excel_value(clean_row[0])).strip()
+        col_client = str(clean_excel_value(clean_row[1])).strip()
         col_ts = clean_row[6]
-        col_action = str(clean_row[7]).strip()
-        col_msg = str(clean_row[8]).strip()
+        col_action = str(clean_excel_value(clean_row[7])).strip()
+        col_msg = str(clean_excel_value(clean_row[8])).strip()
 
         # 1. Propagation
         if col_site:
@@ -210,7 +221,7 @@ class ExcelParser(BaseParser):
         if isinstance(col_ts, datetime):
             ts = col_ts
         elif col_ts:
-            col_ts_str = str(col_ts).strip()
+            col_ts_str = str(clean_excel_value(col_ts)).strip()
             if col_ts_str:
                 for fmt in ["%d/%m/%Y %H:%M:%S", "%Y-%m-%d %H:%M:%S"]:
                     try:
@@ -222,6 +233,14 @@ class ExcelParser(BaseParser):
         if not ts or not col_msg or col_msg.lower() == 'nan' or not ctx_site_code:
             return None, ctx_site_code, ctx_client_name, ctx_day, ctx_date
         
+        # State mapping
+        state = "UNKNOWN"
+        if "APPARITION" in col_action.upper(): state = "APPARITION"
+        elif "DISPARITION" in col_action.upper(): state = "DISPARITION"
+        elif "EXPIRATION" in col_action.upper(): state = "EXPIRATION"
+        elif "MISE EN SERVICE" in col_action.upper(): state = "MISE_EN_SERVICE"
+        elif "MISE HORS SERVICE" in col_action.upper(): state = "MISE_HORS_SERVICE"
+
         event = NormalizedEvent(
             timestamp=self._normalize_timestamp(ts, source_timezone),
             site_code=ctx_site_code,
@@ -231,7 +250,7 @@ class ExcelParser(BaseParser):
             raw_message=f"{col_action} | {col_msg}" if col_action and col_action.lower() != 'nan' else col_msg,
             normalized_message=normalize_text(f"{col_action} | {col_msg}" if col_action and col_action.lower() != 'nan' else col_msg),
             raw_code=None,
-            status="ALARM" if "APPARITION" in col_action.upper() else "INFO",
+            status="ALARM" if state == "APPARITION" else "INFO",
             source_file=file_path,
             row_index=row_idx,
             raw_data=json.dumps(clean_row if isinstance(clean_row, list) else []),
@@ -240,9 +259,16 @@ class ExcelParser(BaseParser):
 
         # In HISTO, the code might be inside the message after a '$'
         if not event.raw_code and '$' in col_msg:
-            match_code = re.search(r'\$(\w+)', col_msg)
+            match_code = re.search(r'\$([\w-]+)', col_msg) # Allow hyphen in code
             if match_code:
                 event.raw_code = match_code.group(1)
+        
+        event.metadata = {
+            "state": state,
+            "raw_action": col_action,
+            "raw_message": col_msg
+        }
+
         # Weekday
         days_map_fr = ["LUN", "MAR", "MER", "JEU", "VEN", "SAM", "DIM"]
         event.weekday_label = days_map_fr[ts.weekday()]

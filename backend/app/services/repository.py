@@ -18,6 +18,13 @@ class EventRepository:
     def __init__(self, session: AsyncSession):
         self.session = session
 
+    async def get_monitoring_provider(self, provider_id: int) -> Optional[MonitoringProvider]:
+        if not provider_id:
+            return None
+        stmt = select(MonitoringProvider).where(MonitoringProvider.id == provider_id)
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
     async def get_active_rules(self) -> List[AlertRule]:
         stmt = select(AlertRule).where(AlertRule.is_active == True)
         result = await self.session.execute(stmt)
