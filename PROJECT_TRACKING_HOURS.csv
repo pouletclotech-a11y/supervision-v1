@@ -10,4 +10,5 @@ Phase 4,Dploiement VPS Propre,10,0,10,,Planifi
 Phase 5,Structuration SaaS,15,0,15,,Planifi
 Phase 6,Dashboard IA & Design,20,0,20,,Planifi
 Phase 6.2,Ingestion Hardening & Replay,8,8,0,2026-02-26,Purge UNCLASSIFIED + SPGO XLSX + Integrity Check
+Snapshot,Freeze & Backup Phase 6.2,1,1,0,2026-02-26,Dump DB + Snapshot MD + Git Tag
 Phase 7,Agent LLM Local (Futur),0,0,0,,Planifi

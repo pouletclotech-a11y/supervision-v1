@@ -231,27 +231,38 @@ export default function DataValidationPage() {
         }
     }, [events]);
 
+    const [pdfType, setPdfType] = useState<'source' | 'pdf'>('source');
+
     // PDF LOADING
     useEffect(() => {
         if (inspectEvent) {
-            loadPdf(inspectEvent.import_id);
+            // Determine if we should load the PDF or the source
+            // If the row has a pdf_support_path AND we are in "PDF Mode" (from column click)
+            // Or default to 'source' for event inspection
+            loadPdf(inspectEvent.import_id, pdfType);
         } else {
             if (pdfUrl) URL.revokeObjectURL(pdfUrl);
             setPdfUrl(null);
         }
-    }, [inspectEvent]);
+    }, [inspectEvent, pdfType]);
 
-    const loadPdf = async (importId: number) => {
+    const loadPdf = async (importId: number, type: 'source' | 'pdf' = 'source') => {
         setLoadingPdf(true);
         try {
-            const res = await fetchWithAuth(`/imports/${importId}/download`);
+            const res = await fetchWithAuth(`/imports/${importId}/download?file_type=${type}`);
             if (res.ok) {
                 const blob = await res.blob();
                 const url = URL.createObjectURL(blob);
                 setPdfUrl(url);
+            } else {
+                const errorData = await res.json().catch(() => ({}));
+                const msg = errorData.detail || `Failed to load ${type} file`;
+                setError(msg);
+                setPdfUrl(null);
             }
         } catch (err) {
             console.error("Failed to load PDF", err);
+            setError(`Network error loading ${type}`);
         } finally {
             setLoadingPdf(false);
         }
@@ -276,6 +287,27 @@ export default function DataValidationPage() {
         { field: 'id', headerName: 'ID', width: 70 },
         { field: 'created_at', headerName: 'Date', width: 170, valueFormatter: (params: any) => params.value ? new Date(params.value).toLocaleString() : '' },
         { field: 'filename', headerName: 'File', minWidth: 200, width: 350 },
+        {
+            field: 'pdf_support_path', headerName: 'PDF', width: 60,
+            renderCell: (params: GridRenderCellParams) => {
+                if (!params.value) return null;
+                return (
+                    <Tooltip title={params.row.pdf_support_filename || "View PDF Support"}>
+                        <IconButton
+                            size="small"
+                            color="error"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                setPdfType('pdf');
+                                setInspectEvent({ ...params.row, import_id: params.row.id });
+                            }}
+                        >
+                            <FileText size={18} />
+                        </IconButton>
+                    </Tooltip>
+                );
+            }
+        },
         {
             field: 'status', headerName: 'Status', width: 100,
             renderCell: (params: GridRenderCellParams) => {

@@ -211,7 +211,12 @@ async def process_ingestion_item(adapter: BaseAdapter, item: AdapterItem, redis_
                         if import_log_primary:
                             import_log_primary.pdf_path = str(file_path)
                             meta = dict(import_log_primary.import_metadata or {})
-                            meta["pdf_support"] = str(item.filename)
+                            # Phase 6.2 Regression Fix: Standardize pdf_support object
+                            meta["pdf_support"] = {
+                                "filename": str(item.filename),
+                                "path": str(file_path),
+                                "size_bytes": item.size_bytes
+                            }
                             import_log_primary.import_metadata = meta
                             await repo.session.commit()
                             

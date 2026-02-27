@@ -3,8 +3,8 @@
 Ce document recense les heures investies dans la conception, le développement et la sécurisation de la plateforme **Supervision-V1**.
 
 ## Résumé
-- **Dernière mise à jour** : 2026-02-21
-- **Total cumulé** : 143 heures
+- **Dernière mise à jour** : 2026-02-27
+- **Total cumulé** : 149 heures
 
 ---
 
@@ -24,6 +24,13 @@ Ce document recense les heures investies dans la conception, le développement e
 ---
 
 ## 2. Historique des Ajouts
+
+### 2026-02-27 — Phase 6.2 (Correction Régression PDF & Normalisation) [+6h]
+- Backend : Standardisation de `import_metadata["pdf_support"]` et extraction de download URL.
+- API : Ajout des champs aplatis `pdf_support_path` et `pdf_support_filename` dans `ImportLogOut`.
+- Frontend : Ajout de la colonne "PDF" avec icône dédiée et sécurisation de `loadPdf`.
+- Normalisation : Suppression des zéros non significatifs sur les `site_code` dans `ExcelParser`.
+- Bugfix : Correction de `Event.event_type` vers `Event.normalized_type` dans `IncidentService`.
 
 ### 2026-02-21 — Gate B2 (Email IMAP Adapter) [+12h]
 - Refonte complète de l'ingestion Email pour supprimer la dépendance au flag `UNSEEN`.

@@ -44,8 +44,29 @@ async def read_imports(
     result = await db.execute(stmt)
     logs = result.scalars().all()
     
+    processed_logs = []
+    for log in logs:
+        out = ImportLogOut.model_validate(log)
+        
+        # Phase 6.2 Regression Fix: Populate pdf_support fields for UI
+        meta = log.import_metadata or {}
+        pdf_support = meta.get("pdf_support")
+        
+        # Support both new dict format and legacy string format (for backward compatibility during transition)
+        if pdf_support:
+            out.pdf_support_path = f"/api/v1/imports/{log.id}/download?file_type=pdf"
+            if isinstance(pdf_support, dict):
+                out.pdf_support_filename = pdf_support.get("filename")
+            else:
+                out.pdf_support_filename = str(pdf_support)
+        elif log.pdf_path: # Fallback if only pdf_path is set but not in metadata
+            out.pdf_support_path = f"/api/v1/imports/{log.id}/download?file_type=pdf"
+            out.pdf_support_filename = "Support.pdf"
+
+        processed_logs.append(out)
+
     return {
-        "imports": [ImportLogOut.model_validate(log) for log in logs],
+        "imports": processed_logs,
         "total": total
     }
 

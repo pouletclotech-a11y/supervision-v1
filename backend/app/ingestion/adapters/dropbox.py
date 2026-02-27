@@ -59,7 +59,8 @@ class DropboxAdapter(BaseAdapter):
                     size_bytes=stats.st_size,
                     mtime=datetime.fromtimestamp(stats.st_mtime),
                     source="dropbox",
-                    metadata=item_metadata
+                    metadata=item_metadata,
+                    source_message_id=item_metadata.get("source_message_id")
                 ))
         
         # Sort by mtime ascending for deterministic processing
