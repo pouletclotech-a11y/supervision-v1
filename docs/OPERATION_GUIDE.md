@@ -196,6 +196,19 @@ docker logs -f supervision_worker    # Ingestion logs
 docker logs -f supervision_backend   # API logs
 ```
 
+### Ingestion Health Dashboard (Roadmap 5)
+A synthetic dashboard is available on the main landing page to monitor ingestion health in real-time.
+
+#### Health Status Legend
+- 🟢 **OK**: All expected files received, events ingested, and integrity >= 95%.
+- 🟡 **WARNING**: Integrity dropped below 95% OR PDF support files are missing for some XLS imports.
+- 🔴 **CRITICAL**: No XLS files received for the day OR zero events ingested (potential parser failure).
+
+#### API Endpoint
+- `GET /api/v1/health/ingestion-summary`: Returns today's metrics aggregated by provider.
+- *Dependencies*: Requires Administrator role.
+- *Refresh Rate*: UI auto-refreshes every 60 seconds.
+
 #### Structured Logs (Roadmap 4)
 Recherchez ces tags pour valider l'ingestion :
 - `[Ingestion] ATTACHMENT_RECEIVED`: Nouveau fichier détecté.

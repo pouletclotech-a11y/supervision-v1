@@ -621,3 +621,70 @@ class AdminRepository:
         
         await self.session.flush()
         return provider
+
+    async def get_ingestion_health_summary(self, target_date: datetime) -> List[Dict]:
+        """
+        Aggregates ingestion metrics per provider for a given date.
+        """
+        from sqlalchemy import text, cast, Numeric
+        
+        # We use raw SQL for complex JSON extraction and grouping efficiency if needed,
+        # but let's try SQLAlchemy first for better maintenance.
+        
+        start_date = target_date.replace(hour=0, minute=0, second=0, microsecond=0)
+        end_date = start_date + timedelta(days=1)
+
+        # Labels subquery
+        provider_stmt = select(MonitoringProvider.id, MonitoringProvider.label, MonitoringProvider.code)
+        providers_res = await self.session.execute(provider_stmt)
+        providers_map = {p.id: {"label": p.label, "code": p.code} for p in providers_res.all()}
+
+        # Aggregation query
+        stmt = (
+            select(
+                ImportLog.provider_id,
+                func.count(ImportLog.id).label("total_imports"),
+                func.count(func.distinct(ImportLog.source_message_id)).label("total_emails"),
+                func.count().filter(ImportLog.filename.ilike("%.xls%")).label("total_xls"),
+                func.count().filter(ImportLog.filename.ilike("%.pdf%")).label("total_pdf"),
+                func.sum(ImportLog.events_count).label("total_events"),
+                func.avg(
+                    cast(
+                        func.jsonb_extract_path_text(ImportLog.import_metadata, 'integrity_check', 'match_pct'),
+                        Numeric
+                    )
+                ).label("avg_integrity"),
+                func.count().filter(
+                    ImportLog.filename.ilike("%.xls%"),
+                    func.jsonb_extract_path_text(ImportLog.import_metadata, 'pdf_support').is_(None)
+                ).label("missing_pdf")
+            )
+            .where(
+                ImportLog.created_at >= start_date,
+                ImportLog.created_at < end_date
+            )
+            .group_by(ImportLog.provider_id)
+        )
+
+        result = await self.session.execute(stmt)
+        rows = result.all()
+
+        summary = []
+        for row in rows:
+            p_info = providers_map.get(row.provider_id, {"label": f"Unknown ({row.provider_id})", "code": "UNKNOWN"})
+            
+            data = {
+                "provider_id": row.provider_id,
+                "provider_label": p_info["label"],
+                "provider_code": p_info["code"],
+                "total_imports": row.total_imports,
+                "total_emails": row.total_emails,
+                "total_xls": row.total_xls,
+                "total_pdf": row.total_pdf,
+                "total_events": int(row.total_events or 0),
+                "avg_integrity": float(row.avg_integrity or 0),
+                "missing_pdf": row.missing_pdf
+            }
+            summary.append(data)
+
+        return summary

@@ -20,6 +20,8 @@ import {
     ArrowUpRight,
     Clock
 } from 'lucide-react';
+import IngestionHealthPanel from '../components/IngestionHealthPanel';
+
 export default function DashboardPage() {
     return (
         <Layout>
@@ -74,33 +76,9 @@ export default function DashboardPage() {
 
                 {/* MAIN GRID */}
                 <Grid container spacing={3}>
-                    {/* LEFT: CHART / ACTIVITY */}
+                    {/* LEFT: INGESTION HEALTH */}
                     <Grid size={{ xs: 12, md: 8 }}>
-                        <Paper sx={{ p: 3, height: '100%', minHeight: 400 }}>
-                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-                                <Typography variant="h6">Ingestion Volume</Typography>
-                                <IconButton size="small"><MoreHorizontal size={20} /></IconButton>
-                            </Box>
-
-                            {/* CSS BAR CHART */}
-                            <Box sx={{ height: 300, display: 'flex', alignItems: 'end', gap: 1, px: 2, pb: 2, borderBottom: '1px solid', borderColor: 'divider' }}>
-                                {[40, 55, 45, 60, 75, 65, 80, 50, 70, 85, 90, 60, 75, 65, 55, 45, 35, 55, 65, 80, 85, 100, 75, 65].map((h, i) => (
-                                    <Box key={i} sx={{
-                                        flex: 1,
-                                        height: `${h}%`,
-                                        bgcolor: i === 21 ? 'primary.main' : 'divider',
-                                        borderRadius: '4px 4px 0 0',
-                                        transition: 'all 0.3s',
-                                        '&:hover': { bgcolor: 'primary.light', opacity: 0.8 }
-                                    }} />
-                                ))}
-                            </Box>
-                            <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 2 }}>
-                                <Typography variant="caption" color="text.secondary">00:00</Typography>
-                                <Typography variant="caption" color="text.secondary">12:00</Typography>
-                                <Typography variant="caption" color="text.secondary">23:59</Typography>
-                            </Box>
-                        </Paper>
+                        <IngestionHealthPanel />
                     </Grid>
 
                     {/* RIGHT: SYSTEM STATUS */}

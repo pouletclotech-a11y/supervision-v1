@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Depends
 from app.api.v1.endpoints import (
     imports, events, alerts, settings, utils, login, users, debug, connections,
-    admin_unmatched, admin_profiles, admin_sandbox, admin_reprocess, admin_business, admin_providers
+    admin_unmatched, admin_profiles, admin_sandbox, admin_reprocess, admin_business, admin_providers,
+    health
 )
 from app.auth import deps
 
@@ -15,6 +16,7 @@ api_router.include_router(utils.router, prefix="/utils", tags=["utils"], depende
 api_router.include_router(users.router, prefix="/users", tags=["users"], dependencies=[Depends(deps.get_current_user)])
 api_router.include_router(debug.router, prefix="/debug", tags=["debug"])
 api_router.include_router(connections.router, prefix="/connections", tags=["connections"])
+api_router.include_router(health.router, prefix="/health", tags=["health"], dependencies=[Depends(deps.get_current_active_admin)])
 
 # Admin Calibration Tool (Phase 3 BIS)
 api_router.include_router(admin_unmatched.router, prefix="/admin/unmatched", tags=["admin-calibration"], dependencies=[Depends(deps.get_current_active_admin)])

@@ -4,7 +4,7 @@ Ce document recense les heures investies dans la conception, le développement e
 
 ## Résumé
 - **Dernière mise à jour** : 2026-02-27
-- **Total cumulé** : 157 heures
+- **Total cumulé** : 164 heures
 
 ---
 
@@ -24,6 +24,19 @@ Ce document recense les heures investies dans la conception, le développement e
 ---
 
 ## 2. Historique des Ajouts
+
+### 2026-02-27 — Roadmap 5 (Ingestion Health Dashboard v1) [+4h]
+- **Backend API** : Création de `GET /api/v1/health/ingestion-summary` avec agrégation SQL (`total_events`, `avg_integrity`, `missing_pdf`).
+- **Logic Health** : Implémentation du calcul de statut (OK/WARNING/CRITICAL) côté Python.
+- **Frontend Panel** : Création de `IngestionHealthPanel.tsx` avec auto-refresh 60s et badges de statut.
+- **Intégration** : Déploiement du panel sur la page "System Overview" (Dashboard principal).
+- **Documentation** : Mise à jour de `OPERATION_GUIDE.md` (Monitoring section).
+
+### 2026-02-27 — Post HOTFIX 4 Lockdown Audit [+3h]
+- **Audit Signature** : Confirmation de l'ordre `normalize_site_code()` -> `Signature/Hash` dans `worker.py`.
+- **Analyse Legacy** : Identification de 1902 raccordements avec zéros préfixes (Providers 2, 3, 5).
+- **Stress Test** : Replay réussi de l'import 518 (transactional clean + re-insert) avec 0 duplication et compteurs DB consolidés.
+- **Reporting** : Production du rapport de stabilité "Prod-stable".
 
 ### 2026-02-27 — HOTFIX Roadmap 4 (PDF Pairing & Site Dedupe) [+8h]
 - **Normalisation** : Mise en place d'une fonction centrale `normalize_site_code` (Excel wrappers, trim, numeric leading zeros).
