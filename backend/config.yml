@@ -4,6 +4,10 @@ ingestion:
   pdf_debug: true
   burst_window_seconds: 5
 
+monitoring:
+  RULE_MONITORING_HIGH_THRESHOLD: 100
+  RULE_MONITORING_LOW_THRESHOLD: 1
+
 anti_noise:
   excluded_families: 
     - "SMAIL"

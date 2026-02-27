@@ -688,3 +688,53 @@ class AdminRepository:
             summary.append(data)
 
         return summary
+
+    async def get_rule_trigger_summary(self, target_date: datetime) -> List[Dict]:
+        """
+        Agrège les déclenchements de règles par règle et par provider pour une date donnée.
+        """
+        from sqlalchemy import func, select, distinct
+        
+        start_date = target_date.replace(hour=0, minute=0, second=0, microsecond=0)
+        end_date = start_date + timedelta(days=1)
+
+        # On rejoint event_rule_hits -> events -> imports pour avoir le provider_id
+        stmt = (
+            select(
+                EventRuleHit.rule_id,
+                EventRuleHit.rule_name,
+                ImportLog.provider_id,
+                func.count(EventRuleHit.id).label("total_triggers"),
+                func.count(func.distinct(Event.site_code)).label("distinct_sites"),
+                func.max(EventRuleHit.created_at).label("last_trigger_at")
+            )
+            .join(Event, EventRuleHit.event_id == Event.id)
+            .join(ImportLog, Event.import_id == ImportLog.id)
+            .where(
+                EventRuleHit.created_at >= start_date,
+                EventRuleHit.created_at < end_date
+            )
+            .group_by(EventRuleHit.rule_id, EventRuleHit.rule_name, ImportLog.provider_id)
+        )
+
+        result = await self.session.execute(stmt)
+        rows = result.all()
+
+        # Récupération des labels de providers pour enrichir
+        provider_stmt = select(MonitoringProvider.id, MonitoringProvider.label)
+        p_res = await self.session.execute(provider_stmt)
+        p_map = {p.id: p.label for p in p_res.all()}
+
+        summary = []
+        for row in rows:
+            summary.append({
+                "rule_id": row.rule_id,
+                "rule_name": row.rule_name,
+                "provider_id": row.provider_id,
+                "provider_label": p_map.get(row.provider_id, f"Unknown ({row.provider_id})"),
+                "total_triggers": row.total_triggers,
+                "distinct_sites": row.distinct_sites,
+                "last_trigger_at": row.last_trigger_at
+            })
+            
+        return summary

@@ -21,6 +21,7 @@ import {
     Clock
 } from 'lucide-react';
 import IngestionHealthPanel from '../components/IngestionHealthPanel';
+import RuleTriggerPanel from '../components/RuleTriggerPanel';
 
 export default function DashboardPage() {
     return (
@@ -124,6 +125,11 @@ export default function DashboardPage() {
                                 ))}
                             </Box>
                         </Paper>
+                    </Grid>
+
+                    {/* FULL WIDTH: RULE TRIGGER MONITORING */}
+                    <Grid size={{ xs: 12 }}>
+                        <RuleTriggerPanel />
                     </Grid>
                 </Grid>
 

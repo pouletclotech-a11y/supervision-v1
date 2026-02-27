@@ -4,7 +4,7 @@ Ce document recense les heures investies dans la conception, le développement e
 
 ## Résumé
 - **Dernière mise à jour** : 2026-02-27
-- **Total cumulé** : 164 heures
+- **Total cumulé** : 170 heures
 
 ---
 
@@ -24,6 +24,14 @@ Ce document recense les heures investies dans la conception, le développement e
 ---
 
 ## 2. Historique des Ajouts
+
+### 2026-02-27 — Roadmap 6 (Rule Trigger Monitoring Panel v1) [+6h]
+- **Backend API** : Création de `GET /api/v1/rules/trigger-summary` avec agrégation complexe (`distinct_sites`, `last_trigger_at`).
+- **Configuration** : Intégration des seuils `RULE_MONITORING_HIGH_THRESHOLD` et `RULE_MONITORING_LOW_THRESHOLD` dans `config.yml`.
+- **Frontend Panel** : Création de `RuleTriggerPanel.tsx` avec badges d'activité `HIGH`/`LOW` et drilldown vers `data-validation`.
+- **Intégration** : Déploiement du panneau en pleine largeur sur le Dashboard principal.
+- **Maintenance** : Mise en place de la structure `AdminRepository` pour les fonctions de monitoring.
+- **Verification** : Rebuild Docker intégral (`--no-cache`) et test de concordance SQL.
 
 ### 2026-02-27 — Roadmap 5 (Ingestion Health Dashboard v1) [+4h]
 - **Backend API** : Création de `GET /api/v1/health/ingestion-summary` avec agrégation SQL (`total_events`, `avg_integrity`, `missing_pdf`).

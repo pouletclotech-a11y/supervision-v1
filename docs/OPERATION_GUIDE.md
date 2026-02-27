@@ -209,6 +209,21 @@ A synthetic dashboard is available on the main landing page to monitor ingestion
 - *Dependencies*: Requires Administrator role.
 - *Refresh Rate*: UI auto-refreshes every 60 seconds.
 
+### Rule Trigger Monitoring (Roadmap 6)
+Monitoring des déclenchements de règles d'alertes en temps réel.
+
+#### Seuils d'Activité (config.yml)
+Les statuts sont calculés selon des seuils modifiables dans `backend/config.yml` :
+- `RULE_MONITORING_HIGH_THRESHOLD` (défaut: 100) -> 🔴 **HIGH**
+- `RULE_MONITORING_LOW_THRESHOLD` (défaut: 1) -> 🟡 **LOW**
+
+#### Drildown
+Le clic sur une règle dans le dashboard redirige vers la page **Data Validation** pré-filtrée sur cette règle pour une analyse détaillée des événements.
+
+#### API Endpoint
+- `GET /api/v1/rules/trigger-summary?date=YYYY-MM-DD`
+- *Dependencies*: Requires Administrator role.
+
 #### Structured Logs (Roadmap 4)
 Recherchez ces tags pour valider l'ingestion :
 - `[Ingestion] ATTACHMENT_RECEIVED`: Nouveau fichier détecté.
