@@ -196,6 +196,14 @@ docker logs -f supervision_worker    # Ingestion logs
 docker logs -f supervision_backend   # API logs
 ```
 
+#### Structured Logs (Roadmap 4)
+Recherchez ces tags pour valider l'ingestion :
+- `[Ingestion] ATTACHMENT_RECEIVED`: Nouveau fichier détecté.
+- `[Ingestion] FILTER_DECISION`: ACCEPT/IGNORED (vérifie le format).
+- `[Ingestion] PAIR_ATTEMPT`: Tentative de liaison PDF <-> XLS.
+- `[Ingestion] PDF_SUPPORT_WRITTEN`: Confirmation de l'écriture des métadonnées PDF.
+- `[Resolver] MATCH/FALLBACK`: Détails de l'identification du provider.
+
 ### Navigation & Audit (Import Log)
 L'interface de validation des données permet de naviguer dans l'historique complet des imports :
 - **Pagination** : La liste des imports est paginée (serveur) pour garantir la fluidité.

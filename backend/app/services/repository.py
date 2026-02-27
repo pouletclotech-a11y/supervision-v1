@@ -11,6 +11,7 @@ from app.db.models import (
     MonitoringProvider
 )
 from app.ingestion.models import NormalizedEvent
+from app.ingestion.normalizer import normalize_site_code
 
 logger = logging.getLogger("db-repository")
 
@@ -350,8 +351,9 @@ class EventRepository:
         # Extract unique code_site -> client_name mapping
         site_map = {}
         for e in events:
-            if e.site_code and e.site_code not in site_map:
-                site_map[e.site_code] = e.client_name
+            norm_code = normalize_site_code(e.site_code)
+            if norm_code and norm_code not in site_map:
+                site_map[norm_code] = e.client_name
         
         if not site_map:
             return 0
@@ -378,28 +380,40 @@ class EventRepository:
     async def upsert_site_connection(self, provider_id: int, code_site: str, client_name: str, seen_at: datetime):
         """
         Idempotent upsert for SiteConnection. Increment total_events and update last_seen_at.
-        First_seen_at is preserved automatically by the server_default or NOT being in the update.
+        Uses SELECT ... FOR UPDATE pattern for strict transactional safety (Roadmap 4).
         """
-        # PostgreSQL specific UPSERT
-        from sqlalchemy.dialects.postgresql import insert
-        stmt = insert(SiteConnection).values(
-            provider_id=provider_id,
-            code_site=code_site,
-            client_name=client_name,
-            first_seen_at=seen_at,
-            last_seen_at=seen_at,
-            total_events=1
+        code_site = normalize_site_code(code_site)
+        
+        # 1. SELECT FOR UPDATE to lock the row (or the gap if not exist? Postgres gap locks are complex, but this is the requested pattern)
+        stmt = (
+            select(SiteConnection)
+            .where(SiteConnection.provider_id == provider_id)
+            .where(SiteConnection.code_site == code_site)
+            .with_for_update()
         )
         
-        stmt = stmt.on_conflict_do_update(
-            index_elements=['provider_id', 'code_site'],
-            set_={
-                "last_seen_at": seen_at,
-                "total_events": SiteConnection.total_events + 1,
-                "client_name": client_name # Update name if it changed
-            }
-        )
-        await self.session.execute(stmt)
+        result = await self.session.execute(stmt)
+        connection = result.scalar_one_or_none()
+        
+        if connection:
+            # 2. UPDATE existing
+            connection.last_seen_at = seen_at
+            connection.total_events = (connection.total_events or 0) + 1
+            if client_name:
+                connection.client_name = client_name
+        else:
+            # 3. INSERT new
+            new_conn = SiteConnection(
+                provider_id=provider_id,
+                code_site=code_site,
+                client_name=client_name,
+                first_seen_at=seen_at,
+                last_seen_at=seen_at,
+                total_events=1
+            )
+            self.session.add(new_conn)
+            # Flush to ensure it's in the DB within the transaction
+            await self.session.flush()
 
     async def get_business_summary(self):
         """Totals by provider"""

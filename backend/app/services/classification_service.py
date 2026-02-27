@@ -52,11 +52,13 @@ class ClassificationService:
                     logger.error(f"Invalid regex pattern '{pattern}' for rule {rule.id}: {e}")
 
             if match:
-                logger.info(f"Email {sender_email} matched rule {rule.id} (Type: {match_type}) -> Provider {rule.provider_id}")
+                logger.info(f"[Resolver] MATCH rule_id={rule.id} type={match_type} value='{rule.match_value}' -> provider_id={rule.provider_id}")
                 return rule.provider_id
 
         # 2. No match found -> Return UNCLASSIFIED
-        return await ClassificationService.get_unclassified_id(session)
+        unclassified_id = await ClassificationService.get_unclassified_id(session)
+        logger.info(f"[Resolver] FALLBACK: No rules matched email {sender_email} -> provider_id={unclassified_id} (UNCLASSIFIED)")
+        return unclassified_id
 
     @staticmethod
     async def get_unclassified_id(session: AsyncSession) -> int:

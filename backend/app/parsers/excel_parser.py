@@ -7,6 +7,7 @@ from typing import List, Optional
 from app.parsers.base import BaseParser
 from app.ingestion.models import NormalizedEvent
 from app.utils.text import normalize_text, clean_excel_value
+from app.ingestion.normalizer import normalize_site_code
 
 class ExcelParser(BaseParser):
     """
@@ -25,11 +26,7 @@ class ExcelParser(BaseParser):
         return ['.xls']
 
     def _normalize_site_code(self, code: str) -> str:
-        if not code: return code
-        code = str(code).strip()
-        # Phase 6.2 Bonus: Remove leading zeros (00032009 -> 32009)
-        normalized = code.lstrip('0')
-        return normalized if normalized else '0'
+        return normalize_site_code(code)
 
     def parse(self, file_path: str, source_timezone: str = "UTC", parser_config: dict = None) -> List[NormalizedEvent]:
         # Check if it's a real Excel file (binary)

@@ -6,6 +6,39 @@ from app.core.config import settings
 
 logger = logging.getLogger("normalizer")
 
+def normalize_site_code(raw: str) -> str:
+    """
+    Centralized site_code normalization logic for Roadmap 4.
+    Rules:
+    - strip wrappers ="..."
+    - trim spaces
+    - if numeric (digits only): strip leading zeros (e.g. 00032009 -> 32009)
+    - if result is empty -> "0"
+    - otherwise keep as is (alphas, etc.)
+    """
+    if not raw:
+        return raw
+
+    original = raw
+    # 1. Strip Excel wrappers ="VALUE"
+    if raw.startswith('="') and raw.endswith('"'):
+        raw = raw[2:-1]
+    
+    # 2. Trim spaces
+    raw = raw.strip()
+
+    # 3. Numeric leading zeros logic
+    # Regex ^0+\d+$ matches "01", "007", but not "0", "A01", "0A"
+    if re.match(r'^0+\d+$', raw):
+        raw = raw.lstrip('0')
+        if not raw:
+            raw = "0"
+    
+    if raw != original:
+        logger.debug(f"SiteCode Normalized: '{original}' -> '{raw}'")
+    
+    return raw
+
 class Normalizer:
     def __init__(self):
         self.rules = settings.NORMALIZATION.get('rules', [])
@@ -82,13 +115,8 @@ class Normalizer:
         if field == 'zone_label':
             event.zone_label = value
         elif field == 'site_code':
-            # Force numeric only (V1 Requirement)
-            # Remove non-digits (e.g. C-69000 -> 69000)
-            if value:
-                numeric_val = re.sub(r'\D', '', value)
-                event.site_code = numeric_val if numeric_val else value 
-            else:
-                event.site_code = value
+            # Use centralized normalization
+            event.site_code = normalize_site_code(value)
         elif field == 'sub_type':
             event.sub_type = value
         elif field == 'ticket_code':

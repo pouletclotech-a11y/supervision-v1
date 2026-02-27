@@ -4,7 +4,7 @@ Ce document recense les heures investies dans la conception, le développement e
 
 ## Résumé
 - **Dernière mise à jour** : 2026-02-27
-- **Total cumulé** : 149 heures
+- **Total cumulé** : 157 heures
 
 ---
 
@@ -24,6 +24,14 @@ Ce document recense les heures investies dans la conception, le développement e
 ---
 
 ## 2. Historique des Ajouts
+
+### 2026-02-27 — HOTFIX Roadmap 4 (PDF Pairing & Site Dedupe) [+8h]
+- **Normalisation** : Mise en place d'une fonction centrale `normalize_site_code` (Excel wrappers, trim, numeric leading zeros).
+- **Déduplication** : Implémentation du pattern `SELECT ... FOR UPDATE` + `INSERT/UPDATE` transactionnel pour `site_connections`.
+- **PDF Pairing** : Logs structurés (`ATTACHMENT_RECEIVED`, `FILTER_DECISION`, `PAIR_ATTEMPT`, `PDF_SUPPORT_WRITTEN`) et robustesse PDF-only.
+- **Observabilité** : Logs détaillés pour le `ClassificationService` (SmtpProvider rules matching).
+- **Documentation** : Mise à jour de `INGESTION_SPECS.md` et `OPERATION_GUIDE.md`.
+- **Preuves SQL** : Validation du nettoyage des zéros et de la persistence du format JSON PDF metadata.
 
 ### 2026-02-27 — Phase 6.2 (Correction Régression PDF & Normalisation) [+6h]
 - Backend : Standardisation de `import_metadata["pdf_support"]` et extraction de download URL.

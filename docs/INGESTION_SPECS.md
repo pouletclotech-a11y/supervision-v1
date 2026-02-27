@@ -16,12 +16,17 @@ The system handles two main file types, which serve distinct purposes:
 ### 2.1 Key Fields Extracted
 | Field | Source | Cleaning Rule | Purpose |
 | :--- | :--- | :--- | :--- |
-| **`site_code`** | XLS Col A / PDF | **Digits Only** | Grouping events. |
+| **`site_code`** | XLS Col A / PDF | **Normalized** | Grouping events. |
 | **`alarm_code`** | XLS Col E / PDF | Strict strip, preserves suffixes (ex: `-MHS`) | Precise identification. |
 | **`state`** | XLS/PDF | Mapping: APPARITION, DISPARITION, etc. | Incident lifecycle. |
 
 ### 2.2 Cleaning Rules
--   **Excel**: Systematic `strip()`, removal of wrappers `="..."`, normalization of internal spaces.
+- **Excel**: Systematic `strip()`, removal of wrappers `="..."`, normalization of internal spaces.
+- **Site Code Normalization**:
+    1. Strip wrappers `="..."`.
+    2. Trim spaces.
+    3. If numeric only: `lstrip('0')`. If empty result -> `"0"`.
+    4. Alphanumeric codes are preserved as is.
 
 ## 3. Filtering & Suppression
 -   **Format Filter**: Explicit acceptance list per provider (e.g., `["pdf", "xls", "xlsx"]`). Unlisted formats like `.png` are rejected with status `IGNORED`.

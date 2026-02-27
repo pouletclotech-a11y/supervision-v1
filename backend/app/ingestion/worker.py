@@ -67,6 +67,7 @@ async def process_ingestion_item(adapter: BaseAdapter, item: AdapterItem, redis_
     Returns primary_import_id on success.
     """
     file_path = Path(item.path)
+    logger.info(f"[Ingestion] ATTACHMENT_RECEIVED: filename={item.filename} size={item.size_bytes} ext={file_path.suffix.lower()}")
     
     # 1. Compute Hash (Streaming)
     try:
@@ -112,6 +113,7 @@ async def process_ingestion_item(adapter: BaseAdapter, item: AdapterItem, redis_
             
             ext = file_path.suffix.lower().replace('.', '')
             if ext not in accepted_types:
+                logger.info(f"[Ingestion] FILTER_DECISION: IGNORED file={item.filename} reason=FORMAT_REJECTED")
                 logger.warning(f"[METRIC] run_id={poll_run_id} event=import_rejected file={item.filename} ext={ext} reason=FORMAT_REJECTED")
                 import_log = await repo.create_import_log(item.filename, file_hash=item.sha256)
                 import_log.provider_id = resolved_provider_id
@@ -158,6 +160,7 @@ async def process_ingestion_item(adapter: BaseAdapter, item: AdapterItem, redis_
                 await adapter.ack_unmatched(item, "Profile confidence too low")
                 return import_log.id, []
 
+            logger.info(f"[Ingestion] FILTER_DECISION: ACCEPT {ext} file={item.filename} -> matching profile...")
             logger.info(f"[{adapter.__class__.__name__}] MATCH [{item.filename}] EXT={ext} -> {profile.profile_id} (Score: {match_report['best_score']}) ACCEPT")
             
             # 5. Get Parser
@@ -195,6 +198,7 @@ async def process_ingestion_item(adapter: BaseAdapter, item: AdapterItem, redis_
                 # Phase 4 (Minimal): If we have an existing import (Grouping), PDF is support only
                 if existing_import_id and ext == 'pdf':
                     import_log_primary = await repo.session.get(ImportLog, existing_import_id)
+                    logger.info(f"[Ingestion] PAIR_ATTEMPT: source_message_id={item.source_message_id} import_id={existing_import_id}")
                     
                     # Fallback logic: if XLS (primary) has 0 events, we extract from PDF instead of just linking it
                     if import_log_primary and import_log_primary.events_count == 0:
@@ -218,6 +222,7 @@ async def process_ingestion_item(adapter: BaseAdapter, item: AdapterItem, redis_
                                 "size_bytes": item.size_bytes
                             }
                             import_log_primary.import_metadata = meta
+                            logger.info(f"[Ingestion] PDF_SUPPORT_WRITTEN for import_id={existing_import_id}")
                             await repo.session.commit()
                             
                         await repo.update_provider_last_import(resolved_provider_id, datetime.utcnow())
@@ -230,6 +235,23 @@ async def process_ingestion_item(adapter: BaseAdapter, item: AdapterItem, redis_
                         
                         await adapter.ack_success(item, existing_import_id)
                         return existing_import_id, events
+                
+                # Case: PDF-only email (Phase C.2 Roadmap 4)
+                # If it's a PDF and NO existing_import_id was provided (meaning it's the first or only item in group)
+                # and it's from a group that might have an XLS later? No, if it's orphans or first of group.
+                # If we want it as support only even if alone:
+                if not existing_import_id and ext == 'pdf':
+                    # Case: PDF-only or PDF-first in group. 
+                    # Ensure metadata is written so Frontend shows the Support icon.
+                    meta = dict(import_log.import_metadata or {})
+                    meta["pdf_support"] = {
+                        "filename": str(item.filename),
+                        "path": str(file_path),
+                        "size_bytes": item.size_bytes
+                    }
+                    import_log.import_metadata = meta
+                    import_log.pdf_path = str(file_path)
+                    logger.info(f"[Ingestion] PDF_SUPPORT_WRITTEN for primary import_id={import_log.id}")
 
                 # Pass parser_config (Phase 3 abstraction)
                 parse_result = parser.parse(
@@ -317,7 +339,8 @@ def compute_integrity_check(xls_events: List[Any], pdf_events: List[Any]) -> dic
     Key = (site_code_norm, timestamp_norm, alarm_code_norm)
     """
     def get_key(e):
-        site = "".join(filter(str.isdigit, str(e.site_code or "")))
+        from app.ingestion.normalizer import normalize_site_code
+        site = normalize_site_code(str(e.site_code or ""))
         ts = e.timestamp.strftime("%Y-%m-%dT%H:%M:%S") if hasattr(e.timestamp, 'strftime') else str(e.timestamp)
         code = str(e.raw_code or "").strip()
         return (site, ts, code)
