@@ -13,6 +13,9 @@ monitoring:
   rules:
     score_threshold_default: 70
     exclude_dup_count: true
+    raw_code_mode: "IN"       # EXACT | IN
+    RULE_MONITORING_HIGH_THRESHOLD: 100
+    RULE_MONITORING_LOW_THRESHOLD: 1
   replay:
     default_full_history: true
   ui:
