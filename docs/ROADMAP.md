@@ -84,7 +84,7 @@ Evolution of the ingestion and alerting system to support complex business logic
   - `site_code` (Col A) propagation to empty rows.
   - `day` (Col B) propagation to empty rows.
   - `date` (Col C) inheritance when only time is provided.
-- **Full Timestamps**: Reconstruct complete UTC timestamps for every event line.
+- **Full Times**: Reconstruct complete UTC times for every event line.
 
 ### 2. Incident Management
 - **Pairing**: Match `APPARITION` and `DISPARITION` events to create `Incidents`.

@@ -67,7 +67,7 @@ Au démarrage du backend, chaque profil est validé contre un schéma Pydantic. 
 ## 3. Idempotence Universelle
 
 L'idempotence est garantie par le `event_hash`. 
-**Calcul unique** : `SHA256(tenant_id + site_code + timestamp_utc + event_code + normalized_action)`.
+**Calcul unique** : `SHA256(tenant_id + site_code + time_utc + event_code + normalized_action)`.
 
 > [!IMPORTANT]
 > Le hash doit être indépendant de l'adapter. Un même fichier envoyé par email ou déposé dans Dropbox doit produire des événements avec des hashs identiques.

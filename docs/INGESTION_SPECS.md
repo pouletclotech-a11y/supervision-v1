@@ -9,7 +9,8 @@ The system handles two main file types, which serve distinct purposes:
 
 ### 1.1 Pairing & Integrity Logic (Phase 6.2)
 -   The system attempts to pair files based on their filename or `source_message_id`.
--   **Integrity Check**: When both XLS and PDF are present, a `match_pct` is computed using the signature `(site_code, timestamp, alarm_code)`. Results are stored in `import_metadata["integrity_check"]`.
+-   **Integrity Check**: Lorsque l'XLS et le PDF sont présents, un `match_pct` est calculé via la signature `(site_code, time, alarm_code)`. Résultats stockés dans `import_metadata["integrity_check"]`.
+-   **Déduplication Spécifique (Phase C Roadmap 9)** : Les doublons exacts identifiés a posteriori sont marqués via la colonne `dup_count = 1`. Une vue `view_events_deduplicated` est disponible pour les outils de reporting.
 
 ## 2. Extraction & Normalization
 
@@ -25,8 +26,9 @@ The system handles two main file types, which serve distinct purposes:
 - **Site Code Normalization**:
     1. Strip wrappers `="..."`.
     2. Trim spaces.
-    3. If numeric only: `lstrip('0')`. If empty result -> `"0"`.
-    4. Alphanumeric codes are preserved as is.
+    3. Si numérique uniquement : `lstrip('0')`. Si résultat vide -> `"0"`.
+    4. **Préfixe "C-" (Phase B Roadmap 9)** : Si le code correspond au pattern `^C-[0-9]+$`, le préfixe `C-` est retiré pour harmonisation (ex: `C-69000` -> `69000`).
+    5. Les codes alphanumériques complexes restent inchangés.
 
 ## 3. Filtering & Suppression
 -   **Format Filter**: Explicit acceptance list per provider (e.g., `["pdf", "xls", "xlsx"]`). Unlisted formats like `.png` are rejected with status `IGNORED`.

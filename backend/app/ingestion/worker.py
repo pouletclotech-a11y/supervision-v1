@@ -65,7 +65,7 @@ async def process_ingestion_item(adapter: BaseAdapter, item: AdapterItem, redis_
     """
     Refactored ingestion pipeline (Phase 3).
     Handles: Hash -> Lock -> Profile Match -> Parse -> DB -> Archive -> Unlock.
-    Returns primary_import_id on success.
+    Returns (primary_import_id, events) on success.
     """
     file_path = Path(item.path)
     logger.info(f"[Ingestion] ATTACHMENT_RECEIVED: filename={item.filename} size={item.size_bytes} ext={file_path.suffix.lower()}")
@@ -75,14 +75,14 @@ async def process_ingestion_item(adapter: BaseAdapter, item: AdapterItem, redis_
         item.sha256 = compute_sha256(file_path)
     except Exception as e:
         logger.error(f"[METRIC] event=import_error adapter={adapter.__class__.__name__} run_id={poll_run_id} file={item.filename} reason=hash_failed: {e}")
-        return None
+        return None, []
 
     # 2. Acquire Redis Lock
     lock_key = f"ingestion:lock:file:{item.sha256}"
     lock_token = str(time.time())
     if not await redis_lock.acquire(lock_key, lock_token):
         logger.info(f"[{adapter.__class__.__name__}] Locked, skipping: {item.filename}")
-        return None
+        return None, []
 
     try:
         async with AsyncSessionLocal() as session:
@@ -95,7 +95,7 @@ async def process_ingestion_item(adapter: BaseAdapter, item: AdapterItem, redis_
                 if existing_import.status == "SUCCESS":
                     logger.info(f"[METRIC] run_id={poll_run_id} event=import_duplicate adapter={adapter.__class__.__name__} file={item.filename} sha256={item.sha256[:8]}")
                     await adapter.ack_duplicate(item, existing_import.id)
-                    return existing_import.id
+                    return existing_import.id, []
                 elif existing_import.status == "REPLAY_REQUESTED":
                     logger.info(f"[REPLAY] Hash match found for {item.filename} with REPLAY_REQUESTED status. Starting transactional replace.")
                     is_replay = True
@@ -163,6 +163,15 @@ async def process_ingestion_item(adapter: BaseAdapter, item: AdapterItem, redis_
 
             logger.info(f"[Ingestion] FILTER_DECISION: ACCEPT {ext} file={item.filename} -> matching profile...")
             logger.info(f"[{adapter.__class__.__name__}] MATCH [{item.filename}] EXT={ext} -> {profile.profile_id} (Score: {match_report['best_score']}) ACCEPT")
+
+            # --- Provider Override by Profile (Roadmap 9) ---
+            if profile.provider_code:
+                # Try to resolve actual provider_id from profile's provider_code
+                profile_provider = await repo.get_monitoring_provider_by_code(profile.provider_code)
+                if profile_provider:
+                    if resolved_provider_id != profile_provider.id:
+                        logger.info(f"[Ingestion] PROVIDER_OVERRIDE: email_resolved={resolved_provider_id} -> profile_provider={profile_provider.id} ({profile.provider_code})")
+                        resolved_provider_id = profile_provider.id
             
             # 5. Get Parser
             parser = ParserFactory.get_parser(f".{ext}")
@@ -275,11 +284,15 @@ async def process_ingestion_item(adapter: BaseAdapter, item: AdapterItem, redis_
                     await tagging_service.tag_event(event) # This includes site code normalization
                     
                     is_dup = await dedup_service.is_duplicate(event)
-                    if not is_dup or is_replay: # Force processing in replay mode
+                    if is_dup:
+                        event.dup_count = 1 # Mark as duplicate (Phase C)
+                        duplicates_count += 1
+                        
+                    if not is_dup or is_replay:
                         unique_events.append(event)
                         
-                        # Exclude OPERATOR_ACTION from Site Connection metrics and Alerts
-                        if event.event_type != 'OPERATOR_ACTION':
+                        # Process only if not a duplicate OR if we are in replay mode (re-trigger alerts if forced)
+                        if event.event_type != 'OPERATOR_ACTION' and (not is_dup or is_replay):
                             # Phase 2.A: Actualiser le compteur business (raccordement site)
                             await repo.upsert_site_connection(
                                 provider_id=resolved_provider_id,
@@ -288,8 +301,6 @@ async def process_ingestion_item(adapter: BaseAdapter, item: AdapterItem, redis_
                                 seen_at=event.timestamp
                             )
                             await alerting_service.check_and_trigger_alerts(event, active_rules, repo=repo)
-                    else:
-                        duplicates_count += 1
                 
                 # DB Insert
                 inserted_db_count = 0

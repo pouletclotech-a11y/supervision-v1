@@ -70,7 +70,7 @@ class IncidentService:
     async def process_batch_incidents(self, import_id: int):
         """
         Processes events for a specific import to reconstruct incidents.
-        Events are sorted by timestamp and ID to ensure determinism.
+        Events are sorted by time and ID to ensure determinism.
         """
         # Fetch events for this import, sorted
         stmt = (

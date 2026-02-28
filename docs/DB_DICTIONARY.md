@@ -32,7 +32,7 @@ Stocke les événements de télésurveillance normalisés.
 | Colonne | Type | Nullable | Défaut | Description |
 | :--- | :--- | :---: | :--- | :--- |
 | `id` | integer | NO | nextval | PK |
-| `time` | timestamptz | NO | - | **Partition Key**. Date/heure de l'événement. |
+| `time` | timestamptz | NO | - | **Partition Key (TimescaleDB)**. Date/heure de l'événement. |
 | `site_code` | varchar | YES | - | Code identifiant du raccordement. |
 | `raw_message` | text | NO | - | Message brut reçu. |
 | `raw_code` | varchar | YES | - | Code alarme/transmission brut. |

@@ -57,7 +57,7 @@ Déclenché après l'insertion en base, il évalue par lots les règles de :
 ## 4. Garanties d'Idempotence
 - **Fichiers** : Hashage MD5 du contenu pour éviter le double import.
 - **Messages** : Tracking des `source_message_id`.
-- **Événements** : Signature composite `(site_code, timestamp, raw_code)`.
+- **Événements** : Signature composite `(site_code, time, raw_code)`.
 
 ## 5. Scaling (Évolutivité)
 Pour multiplier par 100 le volume traité :

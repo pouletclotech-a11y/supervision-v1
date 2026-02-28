@@ -11,7 +11,7 @@ logger = logging.getLogger("business-rules")
 class BusinessRuleEngine:
     def __init__(self, session: AsyncSession):
         self.session = session
-        self.config = settings.get("business_rules", {})
+        self.config = getattr(settings, "BUSINESS_RULES", {})
 
     async def evaluate_batch(self, events: List[Event]):
         """Evaluate rules for a batch of persisted events."""
@@ -71,12 +71,7 @@ class BusinessRuleEngine:
         hit = EventRuleHit(
             event_id=event.id,
             rule_id=0, # Dynamic resolution later
-            rule_name=rule_code,
-            hit_metadata={
-                "explanation": explanation,
-                "site_code": event.site_code,
-                "timestamp": datetime.now().isoformat()
-            }
+            rule_name=rule_code
         )
         self.session.add(hit)
         logger.info(f"[RULE_HIT] {rule_code} on event {event.id}")

@@ -169,6 +169,17 @@ Pour lister les 5 derniers providers et leurs paramètres de monitoring :
 ```powershell
 docker compose exec db psql -U admin -d supervision -c "SELECT code, expected_emails_per_day, expected_frequency_type, silence_threshold_minutes, monitoring_enabled, is_active FROM monitoring_providers ORDER BY id DESC LIMIT 5;"
 ```
+
+### Maintenance Roadmap 9 (Cleanup)
+
+#### Déduplication Logique
+Les doublons historiques ont été marqués avec `dup_count = 1`. Pour tout nouveau calcul de métriques ou dashboard, il est recommandé d'utiliser la vue dédupliquée :
+```sql
+SELECT COUNT(*) FROM view_events_deduplicated;
+```
+
+#### Normalisation "C-"
+Le préfixe `C-` (ex: `C-69000`) est automatiquement retiré lors de l'ingestion si le reste du code est numérique. Les anciens codes restent en base pour préserver l'historique, mais les rejeux et futurs imports seront harmonisés.
 ### Procédure de Secours (Dépannage Admin)
 Si l'accès Admin est perdu ou si le password doit être forcé depuis le serveur :
 ```bash
@@ -327,7 +338,7 @@ On a VPS or Production environment, data persistence is handled via Docker volum
 | **Worker Crash with "ImportError"** | Circular dependency in `config.py` vs `config_loader.py`. | Moved imports to top-level or inside functions to break the cycle. | Keep configuration loading simple and acyclic. |
 | **Docker: `02_normalization.sql` not found** | Windows file system vs Linux Docker volume mounting. | Embedded the SQL script directly into the Python migration runner. | Avoid relying on complex volume binds for initialization scripts on Windows. |
 | **API 500 Error on GET** | Pydantic V2 strictness on ORM objects. | Added `model_config = ConfigDict(from_attributes=True)` to schemas. | Pydantic V2 requires explicit opt-in for ORM mode. |
-| **100% Events Marked Duplicate** | Deduplication used `time.time()` (Processing Time) vs `event.timestamp`. | Changed Dedupe key to use Event Timestamp Bucket. | Idempotence must rely on deterministic data, not processing time. |
+| **100% Events Marked Duplicate** | Deduplication used `time.time()` (Processing Time) vs `event.time`. | Changed Dedupe key to use Event Time Bucket. | Idempotence must rely on deterministic data, not processing time. |
 | **UI: Zebra Striping Broken** | Default MUI CSS specificity was higher than custom class. | Used `sx` prop or `!important` utility classes correctly. | Ensure custom theme classes have sufficient specificity. |
 | **Site Code contains "C-"** | Raw data often has prefixes (e.g., `C-69000`). | added Regex `\D` replacement in Normalizer. | Always sanitize identifiers (Digits Only) before storage. |
 | **Frontend build broken** | Relative import `../../../utils/api` in generic pages. | Always use the alias `@/lib/api`. | Leverage TS paths for cleaner and more robust imports. |

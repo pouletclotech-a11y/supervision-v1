@@ -73,6 +73,13 @@ normalization:
       type: "CONNECTION_OK"
       severity: "SUCCESS"
       
+    # YPSILON_HISTO RAW CODES
+    - regex: ".*\\$(0090|0042|0081|0100|0101|0002|0097).*"
+      type: "UNKNOWN_CODE_\\1"
+      severity: "INFO"
+      extract:
+        raw_code: 1
+
     # 6. Fallback / Generic patterns
     - regex: "ALARM (.*)"
       type: "GENERIC_ALARM"
@@ -83,16 +90,16 @@ normalization:
 # Business Rules V1
 business_rules:
   intrusion:
-    keywords: [" intrusion\, \effraction\, \vol\, \alarme zone\, \alarme perimetrique\]
- maintenance_cancel: true
- absence_test:
- trigger_keywords: [\absence\, \no test\, \manque test\]
- cancel_keyword: \test cyclique\
- faults:
- apparition_codes: [\710\, \711\, \750\, \301\, \302\, \304\, \342\, \343\, \07\, \383\, \137\, \144\, \145\, \330\, \796\]
- disparition_suffix: \R\
- ejection:
- code: \570\
- timer_hours: 48
- inhibition:
- keyword: \***\
+    keywords: ["intrusion", "effraction", "vol", "alarme zone", "alarme perimetrique"]
+    maintenance_cancel: true
+  absence_test:
+    trigger_keywords: ["absence", "no test", "manque test"]
+    cancel_keyword: "test cyclique"
+  faults:
+    apparition_codes: ["710", "711", "750", "301", "302", "304", "342", "343", "07", "383", "137", "144", "145", "330", "796"]
+    disparition_suffix: "R"
+  ejection:
+    code: "570"
+    timer_hours: 48
+  inhibition:
+    keyword: "***"

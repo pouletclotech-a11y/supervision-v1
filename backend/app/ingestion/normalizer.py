@@ -27,9 +27,13 @@ def normalize_site_code(raw: str) -> str:
     # 2. Trim spaces
     raw = raw.strip()
 
-    # 3. Numeric leading zeros logic
-    # Regex ^0+\d+$ matches "01", "007", but not "0", "A01", "0A"
-    if re.match(r'^0+\d+$', raw):
+    # 3. Remove C- prefix for numeric codes (Safe Mode - Phase B Roadmap 9)
+    if re.match(r'^C-[0-9]+$', raw):
+        raw = raw[2:]
+
+    # 4. Numeric leading zeros logic
+    # Regex ^0*\d+$ matches "01", "007", "0", but not "A01", "0A"
+    if re.match(r'^[0-9]+$', raw):
         raw = raw.lstrip('0')
         if not raw:
             raw = "0"

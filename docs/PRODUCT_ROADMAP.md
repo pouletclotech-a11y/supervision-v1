@@ -46,7 +46,7 @@ Ce document définit la stratégie d'industrialisation du produit pour passer d'
 
 - **Architecture Distribuée** : Séparation physique des noeuds (Edge, API, Workers dédiés).
 - **DB Optimization** : 
-    - Index multi-colonnes (`tenant_id`, `event_timestamp`).
+    - Index multi-colonnes (`tenant_id`, `event_time`).
     - Partitionnement temporel agressif (TimescaleDB).
 - **Scale & Protection** : 
     - Rate Limiting par tenant et par IP.

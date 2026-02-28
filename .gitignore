@@ -27,3 +27,7 @@ frontend/.next/
 
 # Runtime ingress (local only)
 backend/data/email_ingress/
+
+# Node modules
+node_modules/
+frontend/node_modules/

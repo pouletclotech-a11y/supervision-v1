@@ -29,6 +29,7 @@ class Settings(BaseSettings):
             return v
         raise ValueError(v)
 
+
     @validator("DEFAULT_ADMIN_PASSWORD", pre=True, always=True)
     def validate_admin_password(cls, v: str | None, values: dict) -> str | None:
         env = values.get("ENVIRONMENT", "production")
@@ -60,6 +61,7 @@ class Settings(BaseSettings):
     ANTI_NOISE: Dict[str, Any] = app_config.get('anti_noise', {})
     ZONING: Dict[str, Any] = app_config.get('zoning', {})
     NORMALIZATION: Dict[str, Any] = app_config.get('normalization', {})
+    BUSINESS_RULES: Dict[str, Any] = app_config.get('business_rules', {})
 
     class Config:
         case_sensitive = True

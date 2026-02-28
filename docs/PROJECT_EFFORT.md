@@ -4,7 +4,7 @@ Ce document recense les heures investies dans la conception, le développement e
 
 ## Résumé
 - **Dernière mise à jour** : 2026-02-28
-- **Total cumulé** : 204 heures
+- **Total cumulé** : 224 heures
 
 ---
 
@@ -24,6 +24,12 @@ Ce document recense les heures investies dans la conception, le développement e
 ---
 
 ## 2. Historique des Ajouts
+
+### 2026-02-28 — Roadmap 9 — Data Integrity Cleanup (Safe Mode) [+10h]
+- **Phase A** : Création du provider `YPSILON_HISTO` et du profil `v2` (XLS/PDF). Rejeu transactionnel de 6 imports critiques.
+- **Phase B** : Normalisation sécurisée du préfixe `C-` (regex `^C-[0-9]+$`) dans `normalizer.py`.
+- **Phase C** : Marquage de 14 723 doublons via `dup_count` et création de la vue dédupliquée `view_events_deduplicated`.
+- **Validation** : Rebuild Docker intégral (`--no-cache`), confirmation nomenclature `time` et vérification Health API.
 
 ### 2026-02-28 — Hard Reset Verification & Hotfix API [+1h]
 - **Bugfix** : Correction d'une `AttributeError` dans `health.py` (migration des méthodes de reporting vers `EventRepository`).
