@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 from typing import List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_, or_, desc
-from app.db.models import Event, EventRuleHit, SiteConnection
+from app.db.models import Event, EventRuleHit, SiteConnection, AlertRule
 from app.core.config import settings
 
 logger = logging.getLogger("business-rules")
@@ -66,12 +66,25 @@ class BusinessRuleEngine:
             await self._record_hit(event, "ZONE_INHIBITION", f"Zone inhibée détectée: {msg}")
 
     async def _record_hit(self, event: Event, rule_code: str, explanation: str):
-        # Resolve rule_id from DB if possible, or use a default
-        # For Phase 1, we use rule_name as the primary identifier in EventRuleHit
+        # Resolve rule_id from DB (Roadmap 11 Fix)
+        # We look for a rule named 'ENGINE_V1' or use a fallback
+        rule_id = await self._resolve_system_rule_id()
+        
         hit = EventRuleHit(
             event_id=event.id,
-            rule_id=0, # Dynamic resolution later
+            rule_id=rule_id,
             rule_name=rule_code
         )
         self.session.add(hit)
-        logger.info(f"[RULE_HIT] {rule_code} on event {event.id}")
+        logger.info(f"[RULE_HIT] {rule_code} (engine_id={rule_id}) on event {event.id}")
+
+    async def _resolve_system_rule_id(self) -> int:
+        """Find or create a system rule ID to satisfy FK constraints."""
+        stmt = select(AlertRule.id).where(AlertRule.name == 'ENGINE_V1').limit(1)
+        result = await self.session.execute(stmt)
+        rid = result.scalar()
+        if rid:
+            return rid
+            
+        # Fallback to ID 1 if ENGINE_V1 not found yet
+        return 1

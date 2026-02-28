@@ -29,7 +29,7 @@ class AlertingService:
         """
         # 1. SETUP
         # The base event time is ALWAYS UTC (enforced at ingestion)
-        evt_dt_utc = getattr(event, 'timestamp', None)
+        evt_dt_utc = getattr(event, 'timestamp', None) or getattr(event, 'time', None)
         
         # Override time for deterministic tests
         if reference_time_override:

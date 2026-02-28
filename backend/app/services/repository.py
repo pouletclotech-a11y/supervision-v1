@@ -300,9 +300,9 @@ class EventRepository:
             }
         return None
 
-    async def create_batch(self, events: List[NormalizedEvent], import_id: Optional[int] = None) -> int:
+    async def create_batch(self, events: List[NormalizedEvent], import_id: Optional[int] = None) -> List[Event]:
         if not events:
-            return 0
+            return []
             
         # 1. Resolve Site UUIDs
         # Optimization: distinct sites only
@@ -340,7 +340,7 @@ class EventRepository:
             ))
             
         self.session.add_all(db_events)
-        return len(db_events)
+        return db_events
     
     async def populate_site_connections(
         self, 

@@ -11,7 +11,8 @@ from datetime import datetime
 from typing import Optional, List, Any
 
 from app.core.config import settings
-from app.db.models import ImportLog
+from sqlalchemy import select, update, delete
+from app.db.models import ImportLog, Event
 from app.parsers.factory import ParserFactory
 from app.parsers.excel_parser import ExcelParser
 from app.parsers.pdf_parser import PdfParser
@@ -197,10 +198,15 @@ async def process_ingestion_item(adapter: BaseAdapter, item: AdapterItem, redis_
             if hasattr(item, 'source_message_id') and item.source_message_id:
                 import_log.source_message_id = item.source_message_id
 
+            # Phase Roadmap 11: Commit the log creation so it exists in DB even if processing crashes
+            await session.commit()
+            
+            # Re-fetch it in the new transaction
+            import_log = await session.get(ImportLog, import_log.id)
+            repo = EventRepository(session) # Refresh repo session if needed (though it shares it)
+
             # REPLAY CLEANUP: Delete old events within this transaction if replaying
             if is_replay:
-                from sqlalchemy import delete
-                from app.db.models import Event
                 await session.execute(delete(Event).where(Event.import_id == import_log.id))
                 logger.info(f"[REPLAY] Cleared previous events for Import {import_log.id}")
             
@@ -287,30 +293,37 @@ async def process_ingestion_item(adapter: BaseAdapter, item: AdapterItem, redis_
                     if is_dup:
                         event.dup_count = 1 # Mark as duplicate (Phase C)
                         duplicates_count += 1
-                        
+                    
                     if not is_dup or is_replay:
                         unique_events.append(event)
                         
-                        # Process only if not a duplicate OR if we are in replay mode (re-trigger alerts if forced)
-                        if event.event_type != 'OPERATOR_ACTION' and (not is_dup or is_replay):
+                # DB Insert & Processing
+                db_events = []
+                inserted_db_count = 0
+                if unique_events:
+                    # Phase Roadmap 11: Create DB objects and flush FIRST so events get IDs
+                    db_events = await repo.create_batch(unique_events, import_id=import_log.id)
+                    await session.flush()
+                    inserted_db_count = len(db_events)
+
+                    # Trigger Alerts & Business Rules (now that event.id exists)
+                    alerting_service = AlertingService()
+                    for db_event in db_events:
+                        if db_event.normalized_type != 'OPERATOR_ACTION':
                             # Phase 2.A: Actualiser le compteur business (raccordement site)
                             await repo.upsert_site_connection(
                                 provider_id=resolved_provider_id,
-                                code_site=event.site_code,
-                                client_name=event.client_name,
-                                seen_at=event.timestamp
+                                code_site=db_event.site_code,
+                                client_name=db_event.client_name,
+                                seen_at=db_event.time
                             )
-                            await alerting_service.check_and_trigger_alerts(event, active_rules, repo=repo)
-                
-                # DB Insert
-                inserted_db_count = 0
-                if unique_events:
-                    inserted_db_count = await repo.create_batch(unique_events, import_id=import_log.id)
+                            await alerting_service.check_and_trigger_alerts(db_event, active_rules, repo=repo)
+
                     try:
                         # Phase C: Business Rule Engine (V1)
                         rule_engine = BusinessRuleEngine(session)
                         start_rules = time.time()
-                        await rule_engine.evaluate_batch(unique_events)
+                        await rule_engine.evaluate_batch(db_events)
                         duration_rules = (time.time() - start_rules) * 1000
                         logger.info(f"[METRIC] rule_engine_duration_ms={duration_rules:.2f} import_id={import_log.id}")
                     except Exception as rule_err:
@@ -343,9 +356,39 @@ async def process_ingestion_item(adapter: BaseAdapter, item: AdapterItem, redis_
                 return import_log.id, events
 
             except Exception as e:
+                # Phase A Roadmap 11: Persist error details in metadata
+                # Must rollback first because session might be tainted (IntegrityError, etc.)
+                await session.rollback()
+                
                 error_msg = f"Crash during processing: {str(e)}"
                 logger.error(f"[METRIC] event=import_error adapter={adapter.__class__.__name__} run_id={poll_run_id} reason={error_msg}", exc_info=True)
-                await session.commit()
+                
+                if import_log:
+                    try:
+                        # Use direct update for robustness after rollback
+                        
+                        meta_patch = {
+                            "error_code": type(e).__name__,
+                            "error_message": str(e)[:500],
+                            "error_at": datetime.utcnow().isoformat()
+                        }
+                        
+                        # In PostgreSQL, we can't easily merge JSONB in a simple UPDATE without complex syntax, 
+                        # but we can at least set the main fields. 
+                        # For simplicity, we'll try to update the status and error_message.
+                        stmt = (
+                            update(ImportLog)
+                            .where(ImportLog.id == import_log.id)
+                            .values(
+                                status="ERROR",
+                                error_message=error_msg[:1000]
+                            )
+                        )
+                        await session.execute(stmt)
+                        await session.commit()
+                    except Exception as e2:
+                        logger.error(f"Failed to persist error metadata: {e2}")
+                
                 await adapter.ack_error(item, error_msg)
                 return None, []
 

@@ -1,0 +1,37 @@
+profile_id: ypsilon_histo_v2
+name: YPSILON HISTO (AUTO MATCH)
+priority: 20
+source_timezone: Europe/Paris
+provider_code: YPSILON_HISTO
+confidence_threshold: 1.5
+detection:
+  extensions:
+    - .xls
+    - .xlsx
+    - .pdf
+  filename_pattern: '.*YPSILON_HISTO.*'
+parser_config:
+  format: HISTO
+mapping:
+  # Excel Columns for HISTO format
+  - source: 0
+    target: site_code
+  - source: 1
+    target: client_name
+  - source: 6
+    target: timestamp
+  - source: 8
+    target: raw_message
+  - source: 11
+    target: raw_code
+extraction_rules:
+  # PDF Extraction fallback
+  site_code: '(?P<site_code>\d{4,6})'
+  timestamp: '(?P<timestamp>\d{2}/\d{2}/\d{4} \d{2}:\d{2}:\d{2})'
+  raw_message: '(?P<raw_message>.*)'
+normalization:
+  - field: raw_code
+    pattern: '^(0090|0042|0081|0100|0101|0002|0097)$'
+    replacement: 'UNKNOWN_CODE_\1'
+excel_options:
+  use_raw_values: true
