@@ -3,7 +3,7 @@ from typing import List, Any, Optional
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.session import get_db
-from app.services.repository import AdminRepository
+from app.services.repository import EventRepository
 from pydantic import BaseModel
 from app.core.config import settings
 
@@ -31,7 +31,7 @@ async def get_rule_trigger_summary(
     """
     Get a summary of rule triggers for a specific date.
     """
-    repo = AdminRepository(db)
+    repo = EventRepository(db)
     # Convert date to datetime for repository
     dt = datetime.combine(target_date, datetime.min.time())
     

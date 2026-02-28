@@ -4,7 +4,7 @@ Ce document recense les heures investies dans la conception, le développement e
 
 ## Résumé
 - **Dernière mise à jour** : 2026-02-28
-- **Total cumulé** : 203 heures
+- **Total cumulé** : 204 heures
 
 ---
 
@@ -24,6 +24,11 @@ Ce document recense les heures investies dans la conception, le développement e
 ---
 
 ## 2. Historique des Ajouts
+
+### 2026-02-28 — Hard Reset Verification & Hotfix API [+1h]
+- **Bugfix** : Correction d'une `AttributeError` dans `health.py` (migration des méthodes de reporting vers `EventRepository`).
+- **Audit** : Exécution du protocole "HARD RESET Proof Pack" (Docker, Git, Auth API, connectivity).
+- **Validation** : Tous les endpoints critiques (Health, Rules, Auth) sont opérationnels.
 
 ### 2026-02-28 — Architecture & DB Documentation [+3h]
 - **Architecture** : Rédaction de `ARCHITECTURE_PIPELINE.md` avec diagramme de flux Mermaid et stratégie de montée en charge.
