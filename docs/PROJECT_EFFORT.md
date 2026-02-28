@@ -30,6 +30,15 @@ Ce document recense les heures investies dans la conception, le développement e
 - **Correctifs** : Robustesse du worker face aux crashes, rollback session avant log erreur, flush avant alertes.
 - **Validation** : Succès de l'ingestion V13 avec déclenchement d'alertes système réelles.
 
+### 2026-02-28 — Roadmap 12 — Phase 2A — Raw Code Matching + Dup Exclusion [+4h]
+- **`business_rules.py`** : Réécrit complet. Moteur V2 = dup_count filter dynamique + raw_code matching EXACT/IN + évaluation alert_rules DB. Backward compat moteur V1.
+- **`rules.py`** : Ajout `POST /rules/replay-all` (vider hits + réévaluer tout, batché 500) + `GET /rules/active`.
+- **`config.yml`** : `monitoring.rules.raw_code_mode`, `RULE_MONITORING_HIGH/LOW_THRESHOLD`.
+- **Règles de test** : `TEST_RAW_EXACT` (01401-MHS EXACT) + `TEST_RAW_IN` (0600/0911/344 IN) insérées en DB.
+- **Preuves SQL AVANT** : 1 hit (DEFAUT, 2026-02-27).
+- **Rebuild Docker backend** : ✅ Exit code 0.
+- **Commit** : `b203aaf` · Push GitHub master.
+
 ### 2026-02-28 — Roadmap 12 — Phase 1.5 Step 2 — UX & Monitoring [+7h]
 - **connections/list** : Pagination page-based, tri serveur configurable, réponse enrichie.
 - **Import Log filters** : Bouton "Appliquer", Enter key, URL sync (useSearchParams + Suspense Next.js 14).
