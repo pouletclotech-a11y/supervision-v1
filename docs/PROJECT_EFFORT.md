@@ -4,7 +4,7 @@ Ce document recense les heures investies dans la conception, le développement e
 
 ## Résumé
 - **Dernière mise à jour** : 2026-02-28
-- **Total cumulé** : 200 heures
+- **Total cumulé** : 203 heures
 
 ---
 
@@ -24,6 +24,11 @@ Ce document recense les heures investies dans la conception, le développement e
 ---
 
 ## 2. Historique des Ajouts
+
+### 2026-02-28 — Architecture & DB Documentation [+3h]
+- **Architecture** : Rédaction de `ARCHITECTURE_PIPELINE.md` avec diagramme de flux Mermaid et stratégie de montée en charge.
+- **Dictionnaire** : Génération de `DB_DICTIONARY.md` via introspection SQL (Tables, Colonnes, Clés, Index).
+- **Conformité** : Livraison des documents dans le dossier `docs/` pour la traçabilité.
 
 ### 2026-02-28 — Stabilisation Dashboard & Règles Métier V1 [+10h]
 - **Health API** : Fix du cast SQL `avg_integrity` et sécurisation des types Numeric (200 OK).
