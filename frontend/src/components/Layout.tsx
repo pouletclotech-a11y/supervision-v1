@@ -33,6 +33,8 @@ import {
 import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '../context/AuthContext';
 import { API_ORIGIN } from '@/lib/api';
+import ClientReportPanel from './ClientReportPanel';
+import { InputBase, Paper } from '@mui/material';
 
 const DRAWER_WIDTH = 240;
 const COLLAPSED_WIDTH = 72;
@@ -43,6 +45,9 @@ interface LayoutProps {
 
 export default function Layout({ children }: LayoutProps) {
     const [open, setOpen] = useState(true);
+    const [searchQuery, setSearchQuery] = useState('');
+    const [reportOpen, setReportOpen] = useState(false);
+    const [reportSiteCode, setReportSiteCode] = useState<string | null>(null);
     const router = useRouter();
     const pathname = usePathname();
     const theme = useTheme();
@@ -160,10 +165,44 @@ export default function Layout({ children }: LayoutProps) {
                     bgcolor: 'background.default',
                     justifyContent: 'space-between'
                 }}>
-                    {/* Breadcrumb / Title Placeholder */}
-                    <Typography variant="subtitle1" sx={{ color: 'text.primary', fontWeight: 600 }}>
-                        {menuItems.find(i => i.path === pathname)?.text || 'Overview'}
-                    </Typography>
+                    {/* Breadcrumb / Search */}
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 3, flexGrow: 1, ml: 2 }}>
+                        <Typography variant="subtitle1" sx={{ color: 'text.primary', fontWeight: 600, display: { xs: 'none', lg: 'block' } }}>
+                            {menuItems.find(i => i.path === pathname)?.text || 'Overview'}
+                        </Typography>
+
+                        <Paper
+                            component="form"
+                            onSubmit={(e) => {
+                                e.preventDefault();
+                                if (searchQuery.trim()) {
+                                    setReportSiteCode(searchQuery.trim());
+                                    setReportOpen(true);
+                                }
+                            }}
+                            sx={{
+                                p: '2px 4px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                width: 300,
+                                bgcolor: 'rgba(255, 255, 255, 0.05)',
+                                border: '1px solid',
+                                borderColor: 'divider',
+                                borderRadius: 2,
+                                boxShadow: 'none'
+                            }}
+                        >
+                            <IconButton sx={{ p: '10px' }} aria-label="menu">
+                                <Search size={18} />
+                            </IconButton>
+                            <InputBase
+                                sx={{ ml: 1, flex: 1, fontSize: '0.875rem' }}
+                                placeholder="Quick Site Search (ex: 69000)"
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                            />
+                        </Paper>
+                    </Box>
 
                     {/* User / Actions */}
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
@@ -197,6 +236,12 @@ export default function Layout({ children }: LayoutProps) {
                     {children}
                 </Box>
             </Box>
+
+            <ClientReportPanel
+                siteCode={reportSiteCode}
+                open={reportOpen}
+                onClose={() => setReportOpen(false)}
+            />
         </Box>
     );
 }

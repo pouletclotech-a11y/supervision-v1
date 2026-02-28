@@ -26,6 +26,13 @@ class EventRepository:
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
+    async def get_monitoring_provider_by_code(self, code: str) -> Optional[MonitoringProvider]:
+        if not code:
+            return None
+        stmt = select(MonitoringProvider).where(MonitoringProvider.code == code)
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
     async def get_active_rules(self) -> List[AlertRule]:
         stmt = select(AlertRule).where(AlertRule.is_active == True)
         result = await self.session.execute(stmt)
@@ -129,7 +136,7 @@ class EventRepository:
         result = await self.session.execute(stmt)
         return result.scalar() or 0
         
-    async def record_rule_hit(self, event_id: int, rule_id: int, rule_name: str):
+    async def record_rule_hit(self, event_id: int, rule_id: int, rule_name: str, hit_metadata: Optional[dict] = None):
         """
         Record that a specific rule matched an event. 
         Idempotent via unique index (event_id, rule_id).
@@ -138,7 +145,8 @@ class EventRepository:
         stmt = insert(EventRuleHit).values(
             event_id=event_id,
             rule_id=rule_id,
-            rule_name=rule_name
+            rule_name=rule_name,
+            hit_metadata=hit_metadata
         ).on_conflict_do_nothing(index_elements=['event_id', 'rule_id'])
         
         await self.session.execute(stmt)
@@ -716,27 +724,254 @@ class AdminRepository:
             
         return health_reports
 
-    async def update_provider_monitoring(self, provider_id: int, data: dict) -> Optional[MonitoringProvider]:
-        """Updates monitoring specific fields for a provider."""
-        stmt = select(MonitoringProvider).where(MonitoringProvider.id == provider_id)
-        result = await self.session.execute(stmt)
-        provider = result.scalar_one_or_none()
-        
-        if not provider:
-            return None
-            
-        # Only allow updating monitoring fields
-        allowed_fields = [
-            "recovery_email", "expected_emails_per_day", 
-            "expected_frequency_type", "silence_threshold_minutes", 
-            "monitoring_enabled"
-        ]
-        
-        for field, value in data.items():
-            if field in allowed_fields and value is not None:
-                setattr(provider, field, value)
-        
-        await self.session.flush()
-        return provider
+    async def get_active_alerts(self, skip: int = 0, limit: int = 100) -> List[dict]:
+        """
+        Retrieves currently active alerts (Latest Hit > Latest Disparition).
+        """
+        # Using a raw SQL approach for complex grouping/joining logic
+        # We group by site_code, rule_name, and zone_id (from metadata)
+        sql = """
+        WITH latest_hits AS (
+            SELECT 
+                erh.rule_name,
+                e.site_code,
+                erh.hit_metadata->>'zone_id' as zone_id,
+                MAX(e.time) as last_hit_time,
+                MIN(e.time) as first_hit_time,
+                MAX(e.id) as last_event_id,
+                COUNT(erh.id) as count_hits
+            FROM event_rule_hits erh
+            JOIN events e ON e.id = erh.event_id
+            GROUP BY 1, 2, 3
+        ),
+        latest_disps AS (
+            SELECT 
+                site_code,
+                zone_id::text as zone_id,
+                MAX(time) as last_disp_time
+            FROM events
+            WHERE normalized_type LIKE '%%DISPARITION%%'
+            GROUP BY 1, 2
+        )
+        SELECT 
+            h.rule_name,
+            'ACTIVE' as status,
+            h.site_code,
+            h.first_hit_time as first_seen,
+            h.last_hit_time as last_seen,
+            h.count_hits,
+            h.last_event_id as recent_event_id,
+            p.code as provider_code
+        FROM latest_hits h
+        LEFT JOIN latest_disps d ON d.site_code = h.site_code 
+            AND (d.zone_id = h.zone_id OR (d.zone_id IS NULL AND h.zone_id IS NULL))
+        JOIN site_connections s ON s.code_site = h.site_code
+        JOIN monitoring_providers p ON p.id = s.provider_id
+        WHERE d.last_disp_time IS NULL OR d.last_disp_time < h.last_hit_time
+        ORDER BY h.last_hit_time DESC
+        OFFSET :skip LIMIT :limit
+        """
+        from sqlalchemy import text
+        result = await self.session.execute(text(sql), {"skip": skip, "limit": limit})
+        return [dict(row._mapping) for row in result]
 
-        return provider
+    async def get_archived_alerts(self, days: int = 7, skip: int = 0, limit: int = 100) -> List[dict]:
+        """
+        Retrieves archived alerts (Disparition occurred after the hit).
+        """
+        sql = """
+        WITH latest_hits AS (
+            SELECT 
+                erh.rule_name,
+                e.site_code,
+                erh.hit_metadata->>'zone_id' as zone_id,
+                MAX(e.time) as last_hit_time,
+                MIN(e.time) as first_hit_time,
+                MAX(e.id) as last_event_id,
+                COUNT(erh.id) as count_hits
+            FROM event_rule_hits erh
+            JOIN events e ON e.id = erh.event_id
+            GROUP BY 1, 2, 3
+        ),
+        latest_disps AS (
+            SELECT 
+                site_code,
+                zone_id::text as zone_id,
+                MAX(time) as last_disp_time
+            FROM events
+            WHERE normalized_type LIKE '%%DISPARITION%%'
+            GROUP BY 1, 2
+        )
+        SELECT 
+            h.rule_name,
+            'ARCHIVED' as status,
+            h.site_code,
+            h.first_hit_time as first_seen,
+            h.last_hit_time as last_seen,
+            d.last_disp_time as closed_at,
+            h.count_hits,
+            h.last_event_id as recent_event_id,
+            p.code as provider_code
+        FROM latest_hits h
+        JOIN latest_disps d ON d.site_code = h.site_code 
+            AND (d.zone_id = h.zone_id OR (d.zone_id IS NULL AND h.zone_id IS NULL))
+        JOIN site_connections s ON s.code_site = h.site_code
+        JOIN monitoring_providers p ON p.id = s.provider_id
+        WHERE d.last_disp_time >= h.last_hit_time
+          AND d.last_disp_time >= NOW() - INTERVAL '1 day' * :days
+        ORDER BY d.last_disp_time DESC
+        OFFSET :skip LIMIT :limit
+        """
+        from sqlalchemy import text
+        result = await self.session.execute(text(sql), {"days": days, "skip": skip, "limit": limit})
+        return [dict(row._mapping) for row in result]
+
+    async def get_client_report(self, site_code: str, days: int = 30) -> dict:
+        """Consolidated report for a specific client."""
+        # 1. Fetch Summary KPIs
+        # 2. Fetch Active/Archived Alerts for this site
+        # 3. Fetch Site Info
+        
+        # Site Info
+        stmt_site = select(SiteConnection, MonitoringProvider.label).join(
+            MonitoringProvider, SiteConnection.provider_id == MonitoringProvider.id
+        ).where(SiteConnection.code_site == site_code)
+        res_site = await self.session.execute(stmt_site)
+        site_data = res_site.first()
+        if not site_data:
+            return None
+        
+        site_obj, provider_label = site_data
+        
+        # Summary
+        sql_summary = """
+        SELECT 
+            COUNT(*) as total_events,
+            (SELECT COUNT(DISTINCT rule_name) FROM event_rule_hits erh JOIN events e ON e.id = erh.event_id WHERE e.site_code = :site_code) as total_alerts
+        FROM events 
+        WHERE site_code = :site_code AND time >= NOW() - INTERVAL '1 day' * :days
+        """
+        from sqlalchemy import text
+        res_summary = await self.session.execute(text(sql_summary), {"site_code": site_code, "days": days})
+        summary_row = res_summary.first()
+        
+        # Alerts (Active + Archived for this site)
+        # Re-using logic from get_active/archived but filtered by site
+        active = await self.get_active_alerts_by_site(site_code)
+        archived = await self.get_archived_alerts_by_site(site_code, days)
+        
+        # Timeline
+        stmt_timeline = select(Event).where(
+            Event.site_code == site_code
+        ).order_by(Event.time.desc()).limit(500)
+        res_timeline = await self.session.execute(stmt_timeline)
+        timeline = res_timeline.scalars().all()
+        
+        # Enrich timeline with rule info
+        event_ids = [e.id for e in timeline]
+        hits_map = await self.get_rule_hits_for_events(event_ids)
+        
+        # Format timeline for Pydantic (EventOut compatibility)
+        # Note: EventOut expects triggered_rules: List[TriggeredRuleSummary]
+        # Our repository already has Event models, but we need to attach triggered_rules
+        for evt in timeline:
+            evt.triggered_rules = hits_map.get(evt.id, [])
+
+        return {
+            "site_code": site_code,
+            "provider": provider_label,
+            "summary": {
+                "total_events": summary_row.total_events if summary_row else 0,
+                "total_alerts": summary_row.total_alerts if summary_row else 0,
+                "active_alerts": len(active),
+                "archived_alerts": len(archived)
+            },
+            "alerts": active + archived,
+            "timeline": timeline
+        }
+
+    async def get_active_alerts_by_site(self, site_code: str) -> List[dict]:
+        sql = """
+        WITH latest_hits AS (
+            SELECT 
+                erh.rule_name,
+                e.site_code,
+                erh.hit_metadata->>'zone_id' as zone_id,
+                MAX(e.time) as last_hit_time,
+                MIN(e.time) as first_hit_time,
+                MAX(e.id) as last_event_id,
+                COUNT(erh.id) as count_hits
+            FROM event_rule_hits erh
+            JOIN events e ON e.id = erh.event_id
+            WHERE e.site_code = :site_code
+            GROUP BY 1, 2, 3
+        ),
+        latest_disps AS (
+            SELECT 
+                site_code,
+                zone_id::text as zone_id,
+                MAX(time) as last_disp_time
+            FROM events
+            WHERE site_code = :site_code AND normalized_type LIKE '%%DISPARITION%%'
+            GROUP BY 1, 2
+        )
+        SELECT 
+            h.rule_name,
+            'ACTIVE' as status,
+            h.site_code,
+            h.first_hit_time as first_seen,
+            h.last_hit_time as last_seen,
+            h.count_hits,
+            h.last_event_id as recent_event_id
+        FROM latest_hits h
+        LEFT JOIN latest_disps d ON d.site_code = h.site_code 
+            AND (d.zone_id = h.zone_id OR (d.zone_id IS NULL AND h.zone_id IS NULL))
+        WHERE d.last_disp_time IS NULL OR d.last_disp_time < h.last_hit_time
+        """
+        from sqlalchemy import text
+        result = await self.session.execute(text(sql), {"site_code": site_code})
+        return [dict(row._mapping) for row in result]
+
+    async def get_archived_alerts_by_site(self, site_code: str, days: int) -> List[dict]:
+        sql = """
+        WITH latest_hits AS (
+            SELECT 
+                erh.rule_name,
+                e.site_code,
+                erh.hit_metadata->>'zone_id' as zone_id,
+                MAX(e.time) as last_hit_time,
+                MIN(e.time) as first_hit_time,
+                MAX(e.id) as last_event_id,
+                COUNT(erh.id) as count_hits
+            FROM event_rule_hits erh
+            JOIN events e ON e.id = erh.event_id
+            WHERE e.site_code = :site_code
+            GROUP BY 1, 2, 3
+        ),
+        latest_disps AS (
+            SELECT 
+                site_code,
+                zone_id::text as zone_id,
+                MAX(time) as last_disp_time
+            FROM events
+            WHERE site_code = :site_code AND normalized_type LIKE '%%DISPARITION%%'
+            GROUP BY 1, 2
+        )
+        SELECT 
+            h.rule_name,
+            'ARCHIVED' as status,
+            h.site_code,
+            h.first_hit_time as first_seen,
+            h.last_hit_time as last_seen,
+            d.last_disp_time as closed_at,
+            h.count_hits,
+            h.last_event_id as recent_event_id
+        FROM latest_hits h
+        JOIN latest_disps d ON d.site_code = h.site_code 
+            AND (d.zone_id = h.zone_id OR (d.zone_id IS NULL AND h.zone_id IS NULL))
+        WHERE d.last_disp_time >= h.last_hit_time
+          AND d.last_disp_time >= NOW() - INTERVAL '1 day' * :days
+        """
+        from sqlalchemy import text
+        result = await self.session.execute(text(sql), {"site_code": site_code, "days": days})
+        return [dict(row._mapping) for row in result]

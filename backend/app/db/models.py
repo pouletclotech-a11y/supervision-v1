@@ -3,7 +3,7 @@ from typing import Optional, List
 from sqlalchemy import Column, Integer, String, DateTime, Boolean, ForeignKey, Table, Text, Float, JSON, select, func, BigInteger, Index, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import JSONB, ARRAY
 
 class Base(DeclarativeBase):
     pass
@@ -217,6 +217,7 @@ class EventRuleHit(Base):
     event_id: Mapped[int] = mapped_column(BigInteger, index=True)
     rule_id: Mapped[int] = mapped_column(ForeignKey("alert_rules.id", ondelete="CASCADE"), index=True)
     rule_name: Mapped[str] = mapped_column(String(100))
+    hit_metadata: Mapped[Optional[dict]] = mapped_column(JSONB)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     __table_args__ = (

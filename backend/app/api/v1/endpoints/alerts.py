@@ -14,6 +14,29 @@ from app.auth.deps import get_current_operator_or_admin
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
+@router.get("/active", response_model=List[Any]) # Use Any or AlertOut if imported
+async def get_active_alerts(
+    skip: int = 0,
+    limit: int = 100,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_operator_or_admin)
+) -> Any:
+    """Get currently active alerts."""
+    repo = EventRepository(db)
+    return await repo.get_active_alerts(skip=skip, limit=limit)
+
+@router.get("/archived", response_model=List[Any])
+async def get_archived_alerts(
+    days: int = 7,
+    skip: int = 0,
+    limit: int = 100,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_operator_or_admin)
+) -> Any:
+    """Get archived alerts for the last N days."""
+    repo = EventRepository(db)
+    return await repo.get_archived_alerts(days=days, skip=skip, limit=limit)
+
 
 @router.get("/rules", response_model=List[AlertRuleOut])
 async def read_alert_rules(

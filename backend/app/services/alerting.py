@@ -410,11 +410,24 @@ class AlertingService:
         if repo:
             event_id = getattr(event, 'id', None) or getattr(event, '_db_id', None)
             if event_id:
+                # Build metadata for scope grouping
+                hit_metadata = {}
+                zone_label = getattr(event, 'zone_label', None)
+                if zone_label:
+                    hit_metadata['zone_label'] = zone_label
+                
+                # Try to extract zone_id from metadata or zone_label
+                evt_metadata = getattr(event, 'metadata', {}) or {}
+                zone_id = evt_metadata.get('zone_id')
+                if zone_id:
+                    hit_metadata['zone_id'] = zone_id
+
                 try:
                     await repo.record_rule_hit(
                         event_id=event_id,
                         rule_id=rule.id,
-                        rule_name=rule.name
+                        rule_name=rule.name,
+                        hit_metadata=hit_metadata
                     )
                 except Exception as e:
                     logger.error(f"Failed to record rule hit: {e}")

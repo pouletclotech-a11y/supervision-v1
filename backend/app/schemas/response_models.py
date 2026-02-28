@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional, List
 from enum import Enum
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 class ImportLogOut(BaseModel):
     id: int
@@ -36,7 +36,7 @@ class TriggeredRuleSummary(BaseModel):
 
 class EventOut(BaseModel):
     id: int
-    time: datetime
+    timestamp: datetime = Field(..., validation_alias="time")
     site_code: Optional[str] = None # Mapped from Site
     client_name: Optional[str] = None
     weekday_label: Optional[str] = None
@@ -140,5 +140,26 @@ class AlertRuleCreate(AlertRuleBase):
 class AlertRuleOut(AlertRuleBase):
     id: int
     created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+class AlertOut(BaseModel):
+    rule_name: str
+    status: str # ACTIVE | ARCHIVED
+    site_code: str
+    provider_code: Optional[str] = None
+    first_seen: datetime
+    last_seen: datetime
+    closed_at: Optional[datetime] = None
+    count_hits: int = 1
+    recent_event_id: int
+
+    model_config = ConfigDict(from_attributes=True)
+
+class ClientReportOut(BaseModel):
+    site_code: str
+    provider: Optional[str] = None
+    summary: dict # total_events, total_alerts, active_alerts, archived_alerts
+    alerts: List[AlertOut]
+    timeline: List[EventOut]
 
     model_config = ConfigDict(from_attributes=True)
