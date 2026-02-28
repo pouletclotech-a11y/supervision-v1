@@ -34,8 +34,19 @@ interface HealthRow {
     health_status: 'OK' | 'WARNING' | 'CRITICAL';
 }
 
+interface DailyReceiptStatus {
+    provider_id: number;
+    provider_label: string;
+    provider_code: string;
+    received_today: number;
+    expected_today: number;
+    delta: number;
+    status: 'OK' | 'WARNING' | 'CRITICAL';
+}
+
 export default function IngestionHealthPanel() {
     const [data, setData] = useState<HealthRow[]>([]);
+    const [dailyReceipt, setDailyReceipt] = useState<DailyReceiptStatus[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
@@ -47,6 +58,7 @@ export default function IngestionHealthPanel() {
             if (res.ok) {
                 const json = await res.json();
                 setData(json.summary);
+                setDailyReceipt(json.daily_receipt || []);
                 setLastUpdated(new Date());
                 setError(null);
             } else {
@@ -196,6 +208,32 @@ export default function IngestionHealthPanel() {
                     <Typography variant="caption" color="text.secondary">XLS Missing/Zero Events</Typography>
                 </Box>
             </Box>
+
+            {/* Daily Receipt Widget */}
+            {dailyReceipt.length > 0 && (
+                <Box sx={{ mt: 2, pt: 2, borderTop: '1px solid', borderColor: 'divider' }}>
+                    <Typography variant="caption" color="text.secondary" fontWeight={700} sx={{ display: 'block', mb: 1, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                        Reçus / Attendus aujourd'hui
+                    </Typography>
+                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                        {dailyReceipt.map((r) => {
+                            const statusColor = r.status === 'OK' ? 'success.main' : r.status === 'WARNING' ? 'warning.main' : 'error.main';
+                            const deltaLabel = r.delta > 0 ? `+${r.delta}` : `${r.delta}`;
+                            return (
+                                <Box key={r.provider_id} sx={{ px: 1.5, py: 1, borderRadius: 2, border: '1px solid', borderColor: statusColor, bgcolor: `${r.status === 'OK' ? '#2e7d32' : r.status === 'WARNING' ? '#ed6c02' : '#d32f2f'}14`, minWidth: 120, textAlign: 'center' }}>
+                                    <Typography variant="h6" fontWeight={700} color={statusColor}>
+                                        {r.received_today} / {r.expected_today === 0 ? '—' : r.expected_today}
+                                    </Typography>
+                                    <Typography variant="caption" color="text.secondary">{r.provider_label}</Typography>
+                                    {r.expected_today > 0 && (
+                                        <Typography variant="caption" display="block" color={statusColor} fontWeight={600}>{deltaLabel}</Typography>
+                                    )}
+                                </Box>
+                            );
+                        })}
+                    </Box>
+                </Box>
+            )}
         </Paper>
     );
 }

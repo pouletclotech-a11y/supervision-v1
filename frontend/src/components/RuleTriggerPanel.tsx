@@ -39,13 +39,15 @@ export default function RuleTriggerPanel() {
     const [error, setError] = useState<string | null>(null);
     const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
     const [providerFilter, setProviderFilter] = useState('');
+    // Default to today; user can change to see historical data
+    const [selectedDate, setSelectedDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
     const router = useRouter();
 
-    const fetchData = async () => {
+    const fetchData = async (dateStr?: string) => {
         setLoading(true);
         try {
-            const today = new Date().toISOString().split('T')[0];
-            const res = await fetchWithAuth(`/rules/trigger-summary?date=${today}`);
+            const d = dateStr || selectedDate;
+            const res = await fetchWithAuth(`/rules/trigger-summary?date=${d}`);
             if (res.ok) {
                 const json = await res.json();
                 setData(json.summary);
@@ -62,10 +64,10 @@ export default function RuleTriggerPanel() {
     };
 
     useEffect(() => {
-        fetchData();
-        const interval = setInterval(fetchData, 60000); // 60s
+        fetchData(selectedDate);
+        const interval = setInterval(() => fetchData(selectedDate), 60000);
         return () => clearInterval(interval);
-    }, []);
+    }, [selectedDate]);
 
     const getStatusChip = (status: string) => {
         switch (status) {
@@ -101,23 +103,28 @@ export default function RuleTriggerPanel() {
                     </Box>
                     <Box>
                         <Typography variant="h6" fontWeight={700}>Rule Monitoring</Typography>
-                        <Typography variant="caption" color="text.secondary">Today's triggers & activity</Typography>
+                        <Typography variant="caption" color="text.secondary">Triggers par journée sélectionnée</Typography>
                     </Box>
                 </Box>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <TextField
+                        type="date"
+                        size="small"
+                        value={selectedDate}
+                        onChange={(e) => setSelectedDate(e.target.value)}
+                        sx={{ width: 140, '& .MuiInputBase-input': { fontSize: '0.75rem', py: 0.5 } }}
+                    />
                     <TextField
                         size="small"
                         placeholder="Search..."
                         value={providerFilter}
                         onChange={(e: React.ChangeEvent<HTMLInputElement>) => setProviderFilter(e.target.value)}
-                        slotProps={{
-                            input: {
-                                startAdornment: <Filter size={14} style={{ marginRight: 8, opacity: 0.5 }} />
-                            }
+                        InputProps={{
+                            startAdornment: <Filter size={14} style={{ marginRight: 8, opacity: 0.5 }} />
                         }}
-                        sx={{ mr: 2, '& .MuiInputBase-input': { fontSize: '0.8rem' } }}
+                        sx={{ mr: 1, '& .MuiInputBase-input': { fontSize: '0.8rem' } }}
                     />
-                    <IconButton size="small" onClick={fetchData} disabled={loading}>
+                    <IconButton size="small" onClick={() => fetchData(selectedDate)} disabled={loading}>
                         <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
                     </IconButton>
                 </Box>
@@ -141,7 +148,13 @@ export default function RuleTriggerPanel() {
                         {loading && data.length === 0 ? (
                             <TableRow><TableCell colSpan={6} align="center" sx={{ py: 8 }}><CircularProgress size={24} /></TableCell></TableRow>
                         ) : filteredData.length === 0 ? (
-                            <TableRow><TableCell colSpan={6} align="center" sx={{ py: 8 }}><Typography variant="body2" color="text.secondary">No activity detected</Typography></TableCell></TableRow>
+                            <TableRow><TableCell colSpan={6} align="center" sx={{ py: 8 }}>
+                                <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, opacity: 0.6 }}>
+                                    <Clock size={28} />
+                                    <Typography variant="body2" color="text.secondary">Aucun déclenchement le {selectedDate}</Typography>
+                                    <Typography variant="caption" color="text.secondary">Essayez une date différente ou vérifiez que les règles sont actives.</Typography>
+                                </Box>
+                            </TableCell></TableRow>
                         ) : (
                             filteredData.map((row: RuleTriggerRow) => (
                                 <TableRow

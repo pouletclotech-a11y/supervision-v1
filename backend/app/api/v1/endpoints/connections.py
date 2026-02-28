@@ -43,6 +43,8 @@ class SiteConnectionOut(BaseModel):
 class ConnectionListResponse(BaseModel):
     connections: List[SiteConnectionOut]
     total: int
+    page: int
+    limit: int
 
 class GrowthItem(BaseModel):
     period: str  # YYYY-MM or YYYY
@@ -140,37 +142,52 @@ async def get_connection_stats(
 async def list_connections(
     provider_code: Optional[str] = Query(None, description="Filter by provider code"),
     search: Optional[str] = Query(None, description="Search code_site or client_name"),
-    skip: int = 0,
-    limit: int = 50,
+    page: int = Query(1, ge=1, description="Page number (1-indexed)"),
+    limit: int = Query(50, ge=1, le=500, description="Items per page"),
+    sort_by: str = Query("client_name", description="Sort field: client_name or code_site"),
+    sort_order: str = Query("asc", description="Sort direction: asc or desc"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ) -> Any:
-    """List site connections with filters and pagination."""
+    """List site connections with filters, pagination and sorting (server-side)."""
     base_stmt = (
         select(SiteConnection, MonitoringProvider)
         .join(MonitoringProvider, MonitoringProvider.id == SiteConnection.provider_id)
     )
-    
+
     if provider_code:
         base_stmt = base_stmt.where(MonitoringProvider.code == provider_code)
-    
+
     if search:
         search_pattern = f"%{search}%"
         base_stmt = base_stmt.where(
             (SiteConnection.code_site.ilike(search_pattern)) |
             (SiteConnection.client_name.ilike(search_pattern))
         )
-    
+
     # Count total
     count_stmt = select(func.count()).select_from(base_stmt.subquery())
     total_result = await db.execute(count_stmt)
     total = total_result.scalar() or 0
-    
-    # Fetch page
-    stmt = base_stmt.order_by(SiteConnection.first_seen_at.desc()).offset(skip).limit(limit)
+
+    # Resolve sort column
+    sort_col_map = {
+        "client_name": SiteConnection.client_name,
+        "code_site": SiteConnection.code_site,
+        "first_seen_at": SiteConnection.first_seen_at,
+        "total_events": SiteConnection.total_events,
+    }
+    sort_col = sort_col_map.get(sort_by, SiteConnection.client_name)
+    order_expr = sort_col.asc() if sort_order.lower() == "asc" else sort_col.desc()
+
+    # Secondary sort always stable
+    secondary = SiteConnection.code_site.asc()
+
+    skip = (page - 1) * limit
+    stmt = base_stmt.order_by(order_expr, secondary).offset(skip).limit(limit)
     result = await db.execute(stmt)
     rows = result.all()
-    
+
     connections = [
         SiteConnectionOut(
             id=sc.id,
@@ -183,8 +200,8 @@ async def list_connections(
         )
         for sc, mp in rows
     ]
-    
-    return ConnectionListResponse(connections=connections, total=total)
+
+    return ConnectionListResponse(connections=connections, total=total, page=page, limit=limit)
 
 
 @router.get("/growth", response_model=GrowthResponse)

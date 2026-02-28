@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
 import {
     Box,
     Typography,
@@ -47,15 +48,24 @@ interface SiteConnectionItem {
     provider_label: string;
 }
 
-export default function DataValidationPage() {
+function DataValidationInner() {
+    const searchParams = useSearchParams();
+    const router = useRouter();
+
     // STATE
     const [imports, setImports] = useState<any[]>([]);
     const [loadingImports, setLoadingImports] = useState(false);
     const [importTotal, setImportTotal] = useState(0);
     const [importPaginationModel, setImportPaginationModel] = useState({ page: 0, pageSize: 20 });
-    const [importStatusFilter, setImportStatusFilter] = useState<string>('');
-    const [importDateFrom, setImportDateFrom] = useState<string>('');
-    const [importDateTo, setImportDateTo] = useState<string>('');
+    // Import filter STAGED state (not yet applied)
+    const [stagedStatus, setStagedStatus] = useState<string>(() => searchParams.get('status') || '');
+    const [stagedDateFrom, setStagedDateFrom] = useState<string>(() => searchParams.get('date_from') || '');
+    const [stagedDateTo, setStagedDateTo] = useState<string>(() => searchParams.get('date_to') || '');
+
+    // Applied import filters (trigger fetches)
+    const [importStatusFilter, setImportStatusFilter] = useState<string>(() => searchParams.get('status') || '');
+    const [importDateFrom, setImportDateFrom] = useState<string>(() => searchParams.get('date_from') || '');
+    const [importDateTo, setImportDateTo] = useState<string>(() => searchParams.get('date_to') || '');
 
     const [selectedImportId, setSelectedImportId] = useState<number | null>(null);
     const [events, setEvents] = useState<any[]>([]);
@@ -108,6 +118,36 @@ export default function DataValidationPage() {
     const [connectionsTotal, setConnectionsTotal] = useState(0);
     const [loadingConnections, setLoadingConnections] = useState(false);
     const [connectionsSearch, setConnectionsSearch] = useState('');
+
+    // Apply filters: push to URL and trigger fetch
+    const applyFilters = useCallback(() => {
+        setImportStatusFilter(stagedStatus);
+        setImportDateFrom(stagedDateFrom);
+        setImportDateTo(stagedDateTo);
+        setImportPaginationModel({ page: 0, pageSize: importPaginationModel.pageSize });
+
+        // Sync URL querystring
+        const params = new URLSearchParams();
+        if (stagedStatus) params.set('status', stagedStatus);
+        if (stagedDateFrom) params.set('date_from', stagedDateFrom);
+        if (stagedDateTo) params.set('date_to', stagedDateTo);
+        router.replace(`?${params.toString()}`, { scroll: false });
+    }, [stagedStatus, stagedDateFrom, stagedDateTo, importPaginationModel.pageSize]);
+
+    const clearFilters = useCallback(() => {
+        setStagedStatus('');
+        setStagedDateFrom('');
+        setStagedDateTo('');
+        setImportStatusFilter('');
+        setImportDateFrom('');
+        setImportDateTo('');
+        router.replace('?', { scroll: false });
+    }, []);
+
+    // Enter key to apply
+    const handleFilterKeyDown = (e: React.KeyboardEvent) => {
+        if (e.key === 'Enter') applyFilters();
+    };
 
     // FETCH IMPORTS
     const fetchImports = async () => {
@@ -175,7 +215,7 @@ export default function DataValidationPage() {
         }
     };
 
-    // EFFECTS
+    // EFFECTS: only fetch when APPLIED filters change, not staged
     useEffect(() => { fetchImports(); fetchConnectionStats(); }, [importPaginationModel, importStatusFilter, importDateFrom, importDateTo]);
 
     // Phase 3: FETCH CONNECTION STATS
@@ -554,8 +594,9 @@ export default function DataValidationPage() {
                                 select
                                 size="small"
                                 label="Status"
-                                value={importStatusFilter}
-                                onChange={(e) => setImportStatusFilter(e.target.value)}
+                                value={stagedStatus}
+                                onChange={(e) => setStagedStatus(e.target.value)}
+                                onKeyDown={handleFilterKeyDown}
                                 SelectProps={{ native: true }}
                                 sx={{ flex: 1, '& .MuiInputBase-root': { fontSize: 11 } }}
                                 InputLabelProps={{ shrink: true }}
@@ -567,22 +608,23 @@ export default function DataValidationPage() {
                             </TextField>
                             <Button
                                 size="small"
-                                variant={importStatusFilter === 'ERROR' ? 'contained' : 'outlined'}
+                                variant={stagedStatus === 'ERROR' ? 'contained' : 'outlined'}
                                 color="error"
-                                onClick={() => setImportStatusFilter(importStatusFilter === 'ERROR' ? '' : 'ERROR')}
+                                onClick={() => { setStagedStatus(stagedStatus === 'ERROR' ? '' : 'ERROR'); }}
                                 sx={{ fontSize: 9, minWidth: 60 }}
                             >
-                                Errors Only
+                                Errors
                             </Button>
-                            <Button size="small" variant="outlined" onClick={() => { setImportStatusFilter(''); setImportDateFrom(''); setImportDateTo(''); }} sx={{ fontSize: 9 }}>Clear</Button>
+                            <Button size="small" variant="outlined" onClick={clearFilters} sx={{ fontSize: 9 }}>Clear</Button>
                         </Box>
                         <Box sx={{ display: 'flex', gap: 1 }}>
                             <TextField
                                 type="date"
                                 size="small"
                                 label="From"
-                                value={importDateFrom}
-                                onChange={(e) => setImportDateFrom(e.target.value)}
+                                value={stagedDateFrom}
+                                onChange={(e) => setStagedDateFrom(e.target.value)}
+                                onKeyDown={handleFilterKeyDown}
                                 sx={{ flex: 1, '& .MuiInputBase-root': { fontSize: 10 } }}
                                 InputLabelProps={{ shrink: true }}
                             />
@@ -590,12 +632,22 @@ export default function DataValidationPage() {
                                 type="date"
                                 size="small"
                                 label="To"
-                                value={importDateTo}
-                                onChange={(e) => setImportDateTo(e.target.value)}
+                                value={stagedDateTo}
+                                onChange={(e) => setStagedDateTo(e.target.value)}
+                                onKeyDown={handleFilterKeyDown}
                                 sx={{ flex: 1, '& .MuiInputBase-root': { fontSize: 10 } }}
                                 InputLabelProps={{ shrink: true }}
                             />
                         </Box>
+                        <Button
+                            fullWidth
+                            variant="contained"
+                            size="small"
+                            onClick={applyFilters}
+                            sx={{ fontSize: 10, py: 0.5 }}
+                        >
+                            Appliquer
+                        </Button>
                     </Box>
 
                     <Box sx={{ flex: 1, width: '100%', overflow: 'hidden' }}>
@@ -944,4 +996,11 @@ export default function DataValidationPage() {
     );
 }
 
-
+// Suspense wrapper required by Next.js 14 when using useSearchParams()
+export default function DataValidationPage() {
+    return (
+        <React.Suspense fallback={null}>
+            <DataValidationInner />
+        </React.Suspense>
+    );
+}
