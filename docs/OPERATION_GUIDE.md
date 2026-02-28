@@ -414,3 +414,53 @@ Accessible dans l'interface admin : **Admin → Métriques Business**
 ### Fallback obligatoire
 
 Si aucune règle SMTP ne matche l'expéditeur, l'import est automatiquement attribué au provider `PROVIDER_UNCLASSIFIED`. Ce provider **doit toujours exister** en base (inclus dans `18_seed_providers.sql`).
+
+---
+
+## Connexion PostgreSQL — Référence
+
+> [!IMPORTANT]
+> L'utilisateur de la base est **`admin`** (PAS `postgres`). La base s'appelle **`supervision`** (PAS `supervision_db`).
+
+```bash
+# Connexion psql directe
+docker exec supervision_db psql -U admin -d supervision -c "SELECT now();"
+
+# Vérification statuts imports
+docker exec supervision_db psql -U admin -d supervision -c "SELECT status, COUNT(*) FROM imports GROUP BY 1 ORDER BY 2 DESC;"
+
+# Structure event_rule_hits (inclut hit_metadata depuis Roadmap 10)
+docker exec supervision_db psql -U admin -d supervision -c "\d+ event_rule_hits"
+```
+
+---
+
+## Roadmap 10 — Alert Lifecycle + Client Report
+
+### Nouveaux endpoints
+
+| Méthode | URL | Auth | Description |
+|---|---|---|---|
+| `GET` | `/api/v1/alerts/active` | Operator/Admin | Alertes actives (APPARITION sans DISPARITION) |
+| `GET` | `/api/v1/alerts/archived?days=7` | Operator/Admin | Alertes fermées N derniers jours |
+| `GET` | `/api/v1/client/{site_code}/report?days=30` | User | Rapport consolidé par site |
+
+### Schéma ajouté (Roadmap 10)
+
+```sql
+-- Migration idempotente (rejouer sans risque)
+ALTER TABLE event_rule_hits ADD COLUMN IF NOT EXISTS hit_metadata jsonb;
+```
+
+### Fix REPLAY_REQUESTED orphelins (2026-02-28)
+
+Les imports bloqués en `REPLAY_REQUESTED` (suite aux sessions de replay Roadmap 9) ont été normalisés :
+
+```sql
+BEGIN;
+UPDATE imports SET status = 'SUCCESS' WHERE status = 'REPLAY_REQUESTED' AND events_count > 0;
+UPDATE imports SET status = 'ERROR'   WHERE status = 'REPLAY_REQUESTED' AND events_count = 0;
+COMMIT;
+```
+
+**Résultat** : 32 → SUCCESS, 217 → ERROR. Total final : 51 SUCCESS, 222 ERROR.

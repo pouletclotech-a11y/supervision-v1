@@ -4,7 +4,7 @@ Ce document recense les heures investies dans la conception, le développement e
 
 ## Résumé
 - **Dernière mise à jour** : 2026-02-28
-- **Total cumulé** : 224 heures
+- **Total cumulé** : 246 heures
 
 ---
 
@@ -143,3 +143,19 @@ Les estimations basées sur la complexité technique et le volume de code produi
 | Phase E (Observability Minimale) | **TERMINÉ** | poll_run_id, METRIC logs, timings |
 | Phase F (Lifecycle Management) | À faire | Rétention configurable, Purge auto |
 | Phase G (V2 SaaS Multi-Tenant) | Backlog | Isolation Mailbox, Stockage objet |
+
+---
+
+## 5. Roadmap 10 — Compliance Fix (2026-02-28)
+
+| Tâche | Heures | Résultat |
+|---|---|---|
+| Cleanup Unicode + harmonisation time/timestamp | 2h | ✅ Zéro occurrence |
+| Alert Lifecycle endpoints (`/active`, `/archived`) | 4h | ✅ Implémenté |
+| Client Report endpoint (`/client/{code}/report`) | 3h | ✅ Implémenté |
+| Frontend : SearchBar + ClientReportPanel | 3h | ✅ Intégré dans Layout |
+| Docker : npm ci + .dockerignore + date-fns lockfile | 2h | ✅ Build --no-cache OK |
+| Migration SQL `hit_metadata` (idempotent) | 1h | ✅ `ALTER TABLE IF NOT EXISTS` |
+| Fix REPLAY_REQUESTED orphelins (249 → 51 SUCCESS + 222 ERROR) | 2h | ✅ SQL idempotent avec TRANSACTION |
+| Git commits séparés + push master | 1h | ✅ 3 commits sur master |
+| **Total Roadmap 10** | **22h** | **✅ LIVRÉ** |
