@@ -225,3 +225,52 @@ async def inspect_import(
     
     inspection_result = InspectionService.inspect_file(log.archive_path)
     return inspection_result
+
+@router.get("/{id}/diagnostic")
+async def get_import_diagnostic(
+    id: int,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Diagnostic complet pour comprendre les écarts PDF/XLS.
+    """
+    from sqlalchemy import func
+    
+    stmt = select(ImportLog).where(ImportLog.id == id)
+    result = await db.execute(stmt)
+    log = result.scalar_one_or_none()
+    
+    if not log:
+        raise HTTPException(status_code=404, detail="Import not found")
+        
+    meta = log.import_metadata or {}
+    integrity = meta.get("integrity_check", {})
+    
+    # Preview logic (XLS events)
+    events_stmt = select(Event).where(Event.import_id == id).limit(5)
+    events_result = await db.execute(events_stmt)
+    sample_events = events_result.scalars().all()
+    
+    # Aggregations stats
+    top_codes_stmt = select(Event.raw_code, func.count()).where(Event.import_id == id).group_by(Event.raw_code).order_by(func.count().desc()).limit(10)
+    top_codes = (await db.execute(top_codes_stmt)).all()
+    
+    top_types_stmt = select(Event.normalized_type, func.count()).where(Event.import_id == id).group_by(Event.normalized_type).order_by(func.count().desc()).limit(10)
+    top_types = (await db.execute(top_types_stmt)).all()
+
+    return {
+        "id": id,
+        "filename": log.filename,
+        "status": log.status,
+        "metadata": meta,
+        "integrity": integrity,
+        "previews": {
+            "xls_sample": [EventOut.model_validate(e) for e in sample_events]
+        },
+        "stats": {
+            "top_raw_codes": [{"code": c, "count": cnt} for c, cnt in top_codes],
+            "top_types": [{"type": t, "count": cnt} for t, cnt in top_types],
+            "total_events": log.events_count,
+            "total_duplicates": log.duplicates_count
+        }
+    }

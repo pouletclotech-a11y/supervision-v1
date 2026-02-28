@@ -438,6 +438,12 @@ def compute_integrity_check(xls_events: List[Any], pdf_events: List[Any]) -> dic
 
 async def worker_loop():
     logger.info("Starting Supervision Worker (Phase 3: Matcher & Normalization)...")
+    
+    # Roadmap V12: Dump Monitoring Settings
+    async with AsyncSessionLocal() as session:
+        merged = await settings.get_monitoring_settings(session)
+        logger.info(f"MONITORING_SETTINGS_LOADED: {json.dumps(merged, indent=2)}")
+
     redis_client = await get_redis_client()
     redis_lock = RedisLock(redis_client)
     registry = AdapterRegistry()
@@ -495,10 +501,27 @@ async def worker_loop():
                     # Update primary import metadata
                     from app.db.session import engine, AsyncSession
                     async with AsyncSession(engine) as session:
+                        # Roadmap V12: Get monitoring settings
+                        mon_settings = await settings.get_monitoring_settings(session)
+                        
                         import_log = await session.get(ImportLog, primary_import_id)
                         if import_log:
                             meta = dict(import_log.import_metadata or {})
                             meta["integrity_check"] = results
+                            
+                            # Logique Phase 1 V12: XLS Source of Truth
+                            if mon_settings['integrity']['xls_is_source_of_truth'] and import_log.status == "ERROR":
+                                # If we had an error but XLS is OK, maybe we should reconsider?
+                                # Actually ERROR usually means crash or parser fail.
+                                # But if we are here, it means both XLS and PDF were parsed.
+                                pass
+
+                            # UI Warning based on settings
+                            warn_pct = mon_settings['integrity'].get('warn_pct', 90) / 100
+                            if results['match_pct'] < warn_pct:
+                                logger.warning(f"[Integrity] WARNING: Low match score {results['match_pct']*100}% (Threshold: {warn_pct*100}%)")
+                                meta["integrity_warning"] = True
+                            
                             import_log.import_metadata = meta
                             await session.commit()
                             

@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import List
 from app.parsers.base import BaseParser
 from app.ingestion.models import NormalizedEvent
+from app.ingestion.normalizer import normalize_site_code_full
 import logging
 from app.core.config import settings
 
@@ -31,6 +32,7 @@ class PdfParser(BaseParser):
 
         events = []
         current_site_code = None
+        current_site_code_raw = None
         current_site_name = None
         current_site_secondary = None
         last_event_date = None
@@ -77,7 +79,7 @@ class PdfParser(BaseParser):
                         match_num = re.match(RE_SITE_CODE_NUM, line)
                         
                         if match_c:
-                            current_site_code = match_c.group(1)
+                            current_site_code, current_site_code_raw = normalize_site_code_full(match_c.group(1))
                             current_site_name = match_c.group(2).strip()
                             current_site_secondary = None
                             continue
@@ -85,7 +87,7 @@ class PdfParser(BaseParser):
                             # If line explicitly says "SITE :", it's a primary site reset
                             is_site_header = line.upper().startswith("SITE")
                             if is_site_header or not current_site_code:
-                                current_site_code = match_num.group(1)
+                                current_site_code, current_site_code_raw = normalize_site_code_full(match_num.group(1))
                                 current_site_name = match_num.group(2).strip()
                                 current_site_secondary = None
                             else:
@@ -129,6 +131,7 @@ class PdfParser(BaseParser):
                                 event = NormalizedEvent(
                                     timestamp=self._normalize_timestamp(ts_naive, source_timezone),
                                     site_code=current_site_code,
+                                    site_code_raw=current_site_code_raw,
                                     client_name=current_site_name,
                                     secondary_code=current_site_secondary,
                                     weekday_label=day_label,
@@ -167,6 +170,7 @@ class PdfParser(BaseParser):
                                 sub_event = NormalizedEvent(
                                     timestamp=self._normalize_timestamp(full_ts, source_timezone),
                                     site_code=current_site_code,
+                                    site_code_raw=current_site_code_raw,
                                     client_name=current_site_name,
                                     secondary_code=current_site_secondary,
                                     event_type="DETAIL_LOG",

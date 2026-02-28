@@ -25,6 +25,14 @@ async def get_settings(db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Setting))
     return result.scalars().all()
 
+@router.get("/monitoring")
+async def get_monitoring_settings(db: AsyncSession = Depends(get_db)):
+    """
+    Get monitoring settings merged from config and DB.
+    """
+    from app.core.config import settings as app_settings
+    return await app_settings.get_monitoring_settings(db)
+
 @router.post("/", response_model=Dict[str, str])
 async def update_settings(
     settings: Dict[str, str], # Expecting {"key": "value"}

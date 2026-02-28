@@ -320,6 +320,7 @@ class EventRepository:
                 time=e.timestamp,
                 site_id=site_map.get(e.site_code),
                 site_code=e.site_code,
+                site_code_raw=e.site_code_raw,
                 client_name=e.client_name,
                 weekday_label=e.weekday_label,
                 # zone_id handled later
@@ -385,18 +386,18 @@ class EventRepository:
         logger.info(f"Populated site_connections: {added} new, {len(site_map) - added} existing (provider={provider_id})")
         return added
 
-    async def upsert_site_connection(self, provider_id: int, code_site: str, client_name: str, seen_at: datetime):
+    async def upsert_site_connection(self, provider_id: int, code_site: str, client_name: str, seen_at: datetime, site_code_raw: Optional[str] = None):
         """
         Idempotent upsert for SiteConnection. Increment total_events and update last_seen_at.
         Uses SELECT ... FOR UPDATE pattern for strict transactional safety (Roadmap 4).
         """
-        code_site = normalize_site_code(code_site)
+        code_site_canonical = normalize_site_code(code_site)
         
-        # 1. SELECT FOR UPDATE to lock the row (or the gap if not exist? Postgres gap locks are complex, but this is the requested pattern)
+        # 1. SELECT FOR UPDATE to lock the row
         stmt = (
             select(SiteConnection)
             .where(SiteConnection.provider_id == provider_id)
-            .where(SiteConnection.code_site == code_site)
+            .where(SiteConnection.code_site == code_site_canonical)
             .with_for_update()
         )
         
@@ -409,11 +410,14 @@ class EventRepository:
             connection.total_events = (connection.total_events or 0) + 1
             if client_name:
                 connection.client_name = client_name
+            if site_code_raw and not connection.site_code_raw:
+                connection.site_code_raw = site_code_raw
         else:
             # 3. INSERT new
             new_conn = SiteConnection(
                 provider_id=provider_id,
-                code_site=code_site,
+                code_site=code_site_canonical,
+                site_code_raw=site_code_raw,
                 client_name=client_name,
                 first_seen_at=seen_at,
                 last_seen_at=seen_at,

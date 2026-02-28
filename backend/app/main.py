@@ -44,6 +44,16 @@ app.mount("/uploads", StaticFiles(directory=settings.UPLOAD_PATH), name="uploads
 async def init_tables():
     # Confirm active environment
     logger.info(f"--- Application Starting in ENVIRONMENT={settings.ENVIRONMENT} ---")
+    
+    # Roadmap V12: Dump Monitoring Settings (Merged)
+    from app.db.models import Setting
+    from app.db.session import AsyncSessionLocal
+    import json
+    
+    async with AsyncSessionLocal() as session:
+        merged = await settings.get_monitoring_settings(session)
+        import json
+        logger.info(f"MONITORING_SETTINGS_LOADED: {json.dumps(merged, indent=2)}")
 
     # 1. Database Schema Sync (STRICTLY DEVELOPMENT ONLY)
     if settings.ENVIRONMENT == "development":

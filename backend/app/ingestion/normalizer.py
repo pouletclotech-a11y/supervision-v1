@@ -43,6 +43,32 @@ def normalize_site_code(raw: str) -> str:
     
     return raw
 
+def normalize_site_code_full(raw: str) -> tuple[str, str]:
+    """
+    Phase 1.5 Step 1: Canonical normalization.
+    Rules:
+    - Extract only digits
+    - Strip leading zeros
+    - canonical = the result
+    - raw = original value
+    """
+    if not raw:
+        return "", ""
+    
+    original = str(raw)
+    
+    # 1. Extract only digits
+    canonical = "".join(char for char in original if char.isdigit())
+    
+    # 2. Strip leading zeros
+    canonical = canonical.lstrip('0')
+    
+    # 3. If empty after stripping (was all zeros or no digits)
+    if not canonical and any(char.isdigit() for char in original):
+        canonical = "0"
+    
+    return canonical, original
+
 class Normalizer:
     def __init__(self):
         self.rules = settings.NORMALIZATION.get('rules', [])

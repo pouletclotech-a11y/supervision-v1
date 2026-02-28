@@ -58,6 +58,7 @@ class Event(Base):
     zone_label: Mapped[Optional[str]] = mapped_column(String(255))
     event_metadata: Mapped[Optional[dict]] = mapped_column(JSON, default={})
     source_file: Mapped[Optional[str]] = mapped_column(String(255))
+    site_code_raw: Mapped[Optional[str]] = mapped_column(String(50), index=True)
     dup_count: Mapped[int] = mapped_column(Integer, default=0)
     in_maintenance: Mapped[bool] = mapped_column(Boolean, default=False)
     raw_data: Mapped[Optional[str]] = mapped_column(Text) # Raw source line for audit
@@ -272,6 +273,7 @@ class SiteConnection(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     provider_id: Mapped[int] = mapped_column(ForeignKey("monitoring_providers.id", ondelete="CASCADE"), index=True)
     code_site: Mapped[str] = mapped_column(String(50), index=True)  # Code client
+    site_code_raw: Mapped[Optional[str]] = mapped_column(String(50), index=True)
     client_name: Mapped[Optional[str]] = mapped_column(String(255))
     first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     first_import_id: Mapped[Optional[int]] = mapped_column(Integer)

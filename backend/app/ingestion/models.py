@@ -9,6 +9,7 @@ class NormalizedEvent(BaseModel):
     id: Optional[int] = None
     timestamp: datetime
     site_code: str = Field(..., description="Client Site ID (e.g. C-69000)")
+    site_code_raw: Optional[str] = Field(None, description="Original Site Code before normalization")
     secondary_code: Optional[str] = Field(None, description="Site Secondary Code (e.g. 32009)")
     client_name: Optional[str] = None
     weekday_label: Optional[str] = None

@@ -62,6 +62,28 @@ class Settings(BaseSettings):
     ZONING: Dict[str, Any] = app_config.get('zoning', {})
     NORMALIZATION: Dict[str, Any] = app_config.get('normalization', {})
     BUSINESS_RULES: Dict[str, Any] = app_config.get('business_rules', {})
+    MONITORING: Dict[str, Any] = app_config.get('monitoring', {})
+
+    async def get_monitoring_settings(self, db_session) -> Dict[str, Any]:
+        from app.db.models import Setting
+        from sqlalchemy import select
+        import json
+        
+        merged = dict(self.MONITORING)
+        result = await db_session.execute(select(Setting).where(Setting.key.like("monitoring.%")))
+        for item in result.scalars().all():
+            parts = item.key.split('.')
+            if len(parts) < 2: continue
+            curr = merged
+            for part in parts[1:-1]:
+                if part not in curr: curr[part] = {}
+                curr = curr[part]
+            try:
+                val = json.loads(item.value)
+            except:
+                val = item.value
+            curr[parts[-1]] = val
+        return merged
 
     class Config:
         case_sensitive = True

@@ -7,7 +7,7 @@ from typing import List, Optional
 from app.parsers.base import BaseParser
 from app.ingestion.models import NormalizedEvent
 from app.utils.text import normalize_text, clean_excel_value
-from app.ingestion.normalizer import normalize_site_code
+from app.ingestion.normalizer import normalize_site_code, normalize_site_code_full
 
 class ExcelParser(BaseParser):
     """
@@ -60,6 +60,7 @@ class ExcelParser(BaseParser):
                 
             # Context trackers (Inheritance)
             ctx_site_code = None
+            ctx_site_code_raw = None
             ctx_client_name = None
             ctx_day = None
             ctx_date = None # Last seen full date
@@ -76,9 +77,9 @@ class ExcelParser(BaseParser):
                 while len(row) < 15:
                     row.append("")
                 
-                processed = self._process_row(row, row_idx, file_path, ctx_site_code, ctx_client_name, ctx_day, ctx_date, is_histo, source_timezone)
+                processed = self._process_row(row, row_idx, file_path, ctx_site_code, ctx_site_code_raw, ctx_client_name, ctx_day, ctx_date, is_histo, source_timezone)
                 if processed:
-                    evt, ctx_site_code, ctx_client_name, ctx_day, ctx_date = processed
+                    evt, ctx_site_code, ctx_site_code_raw, ctx_client_name, ctx_day, ctx_date = processed
                     if evt:
                         events.append(evt)
             
@@ -93,6 +94,7 @@ class ExcelParser(BaseParser):
         events = []
         # Context trackers (Inheritance)
         ctx_site_code = None
+        ctx_site_code_raw = None
         ctx_client_name = None
         ctx_day = None
         ctx_date = None # Last seen full date
@@ -109,16 +111,16 @@ class ExcelParser(BaseParser):
                 while len(clean_row) < 6:
                     clean_row.append("")
                 
-                processed = self._process_row(clean_row, row_idx, file_path, ctx_site_code, ctx_client_name, ctx_day, ctx_date, False, source_timezone)
+                processed = self._process_row(clean_row, row_idx, file_path, ctx_site_code, ctx_site_code_raw, ctx_client_name, ctx_day, ctx_date, False, source_timezone)
                 if processed:
-                    evt, ctx_site_code, ctx_client_name, ctx_day, ctx_date = processed
+                    evt, ctx_site_code, ctx_site_code_raw, ctx_client_name, ctx_day, ctx_date = processed
                     if evt:
                         events.append(evt)
         return events
 
-    def _process_row(self, clean_row, row_idx, file_path, ctx_site_code, ctx_client_name, ctx_day, ctx_date, is_histo=False, source_timezone="UTC"):
+    def _process_row(self, clean_row, row_idx, file_path, ctx_site_code, ctx_site_code_raw, ctx_client_name, ctx_day, ctx_date, is_histo=False, source_timezone="UTC"):
         if is_histo:
-            return self._process_row_histo(clean_row, row_idx, file_path, ctx_site_code, ctx_client_name, ctx_day, ctx_date, source_timezone)
+            return self._process_row_histo(clean_row, row_idx, file_path, ctx_site_code, ctx_site_code_raw, ctx_client_name, ctx_day, ctx_date, source_timezone)
         
         col_a, col_b, col_c, col_d, col_e, col_f = [clean_excel_value(c) for c in clean_row[:6]]
 
@@ -128,7 +130,7 @@ class ExcelParser(BaseParser):
             # Match digits-only or C-digits, but keep original if it looks like a code
             site_match = re.match(r'^(C-)?(\d+)$', col_a_clean)
             if site_match:
-                ctx_site_code = self._normalize_site_code(site_match.group(2)) 
+                ctx_site_code, ctx_site_code_raw = normalize_site_code_full(col_a_clean)
                 # Client name is usually in Col B of the header row
                 if col_b and str(col_b).upper()[:3] not in ["LUN", "MAR", "MER", "JEU", "VEN", "SAM", "DIM"]:
                     ctx_client_name = str(col_b).strip()
@@ -161,7 +163,7 @@ class ExcelParser(BaseParser):
 
         # --- 5. EVENT GENERATION ---
         if not ts or not action or not ctx_site_code or action.lower() == 'nan':
-            return None, ctx_site_code, ctx_client_name, ctx_day, ctx_date
+            return None, ctx_site_code, ctx_site_code_raw, ctx_client_name, ctx_day, ctx_date
         
         # State mapping
         state = "UNKNOWN"
@@ -174,6 +176,7 @@ class ExcelParser(BaseParser):
         event = NormalizedEvent(
             timestamp=self._normalize_timestamp(ts, source_timezone),
             site_code=ctx_site_code,
+            site_code_raw=ctx_site_code_raw,
             client_name=ctx_client_name,
             weekday_label=ctx_day,
             event_type=action,
@@ -194,9 +197,9 @@ class ExcelParser(BaseParser):
             "state": state
         }
         
-        return event, ctx_site_code, ctx_client_name, ctx_day, ctx_date
+        return event, ctx_site_code, ctx_site_code_raw, ctx_client_name, ctx_day, ctx_date
 
-    def _process_row_histo(self, clean_row, row_idx, file_path, ctx_site_code, ctx_client_name, ctx_day, ctx_date, source_timezone="UTC"):
+    def _process_row_histo(self, clean_row, row_idx, file_path, ctx_site_code, ctx_site_code_raw, ctx_client_name, ctx_day, ctx_date, source_timezone="UTC"):
         # Format YPSILON_HISTO:
         # Col 0: Site code (8 digits) OR empty
         # Col 1: Client name OR empty
@@ -216,7 +219,7 @@ class ExcelParser(BaseParser):
             # Handle both formats: "69000" or "C-69000"
             match_site = re.match(r'^(C-)?(\d+)$', col_site_clean)
             if match_site:
-                ctx_site_code = self._normalize_site_code(match_site.group(2))
+                ctx_site_code, ctx_site_code_raw = normalize_site_code_full(col_site_clean)
                 if col_client and col_client.lower() != 'nan':
                     ctx_client_name = col_client.strip()
         
@@ -235,7 +238,7 @@ class ExcelParser(BaseParser):
                         continue
         
         if not ts or not col_msg or col_msg.lower() == 'nan' or not ctx_site_code:
-            return None, ctx_site_code, ctx_client_name, ctx_day, ctx_date
+            return None, ctx_site_code, ctx_site_code_raw, ctx_client_name, ctx_day, ctx_date
         
         # State mapping
         state = "UNKNOWN"
@@ -248,6 +251,7 @@ class ExcelParser(BaseParser):
         event = NormalizedEvent(
             timestamp=self._normalize_timestamp(ts, source_timezone),
             site_code=ctx_site_code,
+            site_code_raw=ctx_site_code_raw,
             client_name=ctx_client_name,
             weekday_label=None,
             event_type=col_action if col_action and col_action.lower() != 'nan' else "EVENT",
@@ -277,7 +281,7 @@ class ExcelParser(BaseParser):
         days_map_fr = ["LUN", "MAR", "MER", "JEU", "VEN", "SAM", "DIM"]
         event.weekday_label = days_map_fr[ts.weekday()]
 
-        return event, ctx_site_code, ctx_client_name, ctx_day, ctx_date
+        return event, ctx_site_code, ctx_site_code_raw, ctx_client_name, ctx_day, ctx_date
 
     def _normalize_timestamp(self, ts: datetime, source_timezone: str) -> datetime:
         """

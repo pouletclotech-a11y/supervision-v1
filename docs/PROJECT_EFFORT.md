@@ -4,7 +4,7 @@ Ce document recense les heures investies dans la conception, le développement e
 
 ## Résumé
 - **Dernière mise à jour** : 2026-02-28
-- **Total cumulé** : 246 heures
+- **Total cumulé** : 270 heures
 
 ---
 
@@ -24,6 +24,17 @@ Ce document recense les heures investies dans la conception, le développement e
 ---
 
 ## 2. Historique des Ajouts
+
+### 2026-02-28 — Roadmap 11 — Error Root Cause & Ingestion Fixes [+8h]
+- **Diagnostic** : Résolution des causes racines des 222 imports en erreur (FK `rule_id=0`, Pydantic validation).
+- **Correctifs** : Robustesse du worker face aux crashes, rollback session avant log erreur, flush avant alertes.
+- **Validation** : Succès de l'ingestion V13 avec déclenchement d'alertes système réelles.
+
+### 2026-02-28 — Roadmap 12 — Reset & Ingestion Stability (Phase -1, 0, 1, 1.5 Step 1) [+16h]
+- **Phase -1** : Reset contrôlé des données de test (33 imports supprimés, 2398 sites recalculés).
+- **Phase 0** : Gouvernance settings via `config.yml` et page Admin dédiée.
+- **Phase 1** : Stabilsation ingestion (XLS Source of Truth) et endpoint `/diagnostic`.
+- **Phase 1.5 S1** : Normalisation canonique `site_code` (72k events), migration `site_code_raw`, rebuild `site_connections` (1478 sites).
 
 ### 2026-02-28 — Roadmap 9 — Data Integrity Cleanup (Safe Mode) [+10h]
 - **Phase A** : Création du provider `YPSILON_HISTO` et du profil `v2` (XLS/PDF). Rejeu transactionnel de 6 imports critiques.

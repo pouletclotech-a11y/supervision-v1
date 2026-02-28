@@ -5,8 +5,21 @@ ingestion:
   burst_window_seconds: 5
 
 monitoring:
-  RULE_MONITORING_HIGH_THRESHOLD: 100
-  RULE_MONITORING_LOW_THRESHOLD: 1
+  integrity:
+    warn_pct: 90
+    critical_pct: 70
+    block_on_xls_error: true
+    xls_is_source_of_truth: true
+  rules:
+    score_threshold_default: 70
+    exclude_dup_count: true
+  replay:
+    default_full_history: true
+  ui:
+    client_report_days_default: 30
+  ingestion:
+    site_code_source: "XLS_ONLY"
+    normalize_site_code: true
 
 anti_noise:
   excluded_families: 
