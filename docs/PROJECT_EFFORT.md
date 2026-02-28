@@ -4,7 +4,7 @@ Ce document recense les heures investies dans la conception, le développement e
 
 ## Résumé
 - **Dernière mise à jour** : 2026-02-28
-- **Total cumulé** : 270 heures
+- **Total cumulé** : 277 heures
 
 ---
 
@@ -29,6 +29,14 @@ Ce document recense les heures investies dans la conception, le développement e
 - **Diagnostic** : Résolution des causes racines des 222 imports en erreur (FK `rule_id=0`, Pydantic validation).
 - **Correctifs** : Robustesse du worker face aux crashes, rollback session avant log erreur, flush avant alertes.
 - **Validation** : Succès de l'ingestion V13 avec déclenchement d'alertes système réelles.
+
+### 2026-02-28 — Roadmap 12 — Phase 1.5 Step 2 — UX & Monitoring [+7h]
+- **connections/list** : Pagination page-based, tri serveur configurable, réponse enrichie.
+- **Import Log filters** : Bouton "Appliquer", Enter key, URL sync (useSearchParams + Suspense Next.js 14).
+- **IngestionHealthPanel** : Widget Reçus/Attendus par provider (config-driven `expected_files_per_day`).
+- **RuleTriggerPanel** : Sélecteur de date, état vide explicit (dashboard vide = correct — 0 hits ce jour).
+- **Rebuild Docker frontend** `--no-cache` : ✅ succès, container redémarré.
+- **Commit** : `5725cb8` · Push GitHub master.
 
 ### 2026-02-28 — Roadmap 12 — Reset & Ingestion Stability (Phase -1, 0, 1, 1.5 Step 1) [+16h]
 - **Phase -1** : Reset contrôlé des données de test (33 imports supprimés, 2398 sites recalculés).
