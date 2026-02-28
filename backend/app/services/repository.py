@@ -650,7 +650,10 @@ class AdminRepository:
                 func.sum(ImportLog.events_count).label("total_events"),
                 func.avg(
                     cast(
-                        func.jsonb_extract_path_text(ImportLog.import_metadata, 'integrity_check', 'match_pct'),
+                        func.nullif(
+                            func.jsonb_extract_path_text(ImportLog.import_metadata, 'integrity_check', 'match_pct'),
+                            ''
+                        ),
                         Numeric
                     )
                 ).label("avg_integrity"),

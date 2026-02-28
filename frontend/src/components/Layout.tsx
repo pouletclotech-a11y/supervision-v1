@@ -38,7 +38,7 @@ const DRAWER_WIDTH = 240;
 const COLLAPSED_WIDTH = 72;
 
 interface LayoutProps {
-    children: React.ReactNode;
+    children?: React.ReactNode;
 }
 
 export default function Layout({ children }: LayoutProps) {

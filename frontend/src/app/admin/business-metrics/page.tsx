@@ -217,7 +217,7 @@ export default function BusinessMetricsPage() {
                 {/* Health Monitoring Section (Phase 2.B) */}
                 <Typography variant="h6" fontWeight={700} sx={{ mb: 2 }}>💓 Santé des Flux</Typography>
                 <Grid container spacing={2} sx={{ mb: 4 }}>
-                    {health.map((h) => (
+                    {health.map((h: ProviderHealth) => (
                         <Grid item xs={12} sm={6} md={3} key={h.code}>
                             <HealthStatusCard data={h} />
                         </Grid>
@@ -232,7 +232,7 @@ export default function BusinessMetricsPage() {
                 {/* Summary Widgets */}
                 <Typography variant="h6" fontWeight={700} sx={{ mb: 2 }}>🏬 État du Parc</Typography>
                 <Grid container spacing={2} sx={{ mb: 4 }}>
-                    {summary.map((s) => (
+                    {summary.map((s: ProviderSummary) => (
                         <Grid item xs={12} sm={6} md={3} key={s.provider_code}>
                             <SummaryCard data={s} />
                         </Grid>
@@ -248,7 +248,7 @@ export default function BusinessMetricsPage() {
                             <Select
                                 label="Granularité"
                                 value={granularity}
-                                onChange={(e) => setGranularity(e.target.value as 'month' | 'year')}
+                                onChange={(e: React.ChangeEvent<HTMLInputElement | { value: unknown }>) => setGranularity(e.target.value as 'month' | 'year')}
                             >
                                 <MenuItem value="month">Par mois</MenuItem>
                                 <MenuItem value="year">Par année</MenuItem>
@@ -264,7 +264,7 @@ export default function BusinessMetricsPage() {
                                 contentStyle={{ borderRadius: 8 }}
                                 formatter={(v: number) => [v, 'Nouveaux sites']}
                             />
-                            <Bar dataKey="new_sites" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                            <Bar dataKey="new_sites" fill="#3b82f6" radius={4} />
                         </BarChart>
                     </ResponsiveContainer>
                 </Paper>
@@ -287,7 +287,7 @@ export default function BusinessMetricsPage() {
                                 </TableRow>
                             </TableHead>
                             <TableBody>
-                                {sites.map((row) => (
+                                {sites.map((row: SiteRow) => (
                                     <TableRow key={row.id} hover>
                                         <TableCell><code>{row.code_site}</code></TableCell>
                                         <TableCell>{row.client_name || '—'}</TableCell>

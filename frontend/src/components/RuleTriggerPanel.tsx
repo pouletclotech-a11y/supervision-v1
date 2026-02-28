@@ -87,7 +87,7 @@ export default function RuleTriggerPanel() {
         router.push(`/admin/data-validation?${searchParams.toString()}`);
     };
 
-    const filteredData = data.filter(row =>
+    const filteredData = data.filter((row: RuleTriggerRow) =>
         row.provider_label.toLowerCase().includes(providerFilter.toLowerCase()) ||
         row.rule_name.toLowerCase().includes(providerFilter.toLowerCase())
     );
@@ -109,7 +109,7 @@ export default function RuleTriggerPanel() {
                         size="small"
                         placeholder="Search..."
                         value={providerFilter}
-                        onChange={(e) => setProviderFilter(e.target.value)}
+                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => setProviderFilter(e.target.value)}
                         slotProps={{
                             input: {
                                 startAdornment: <Filter size={14} style={{ marginRight: 8, opacity: 0.5 }} />
@@ -143,7 +143,7 @@ export default function RuleTriggerPanel() {
                         ) : filteredData.length === 0 ? (
                             <TableRow><TableCell colSpan={6} align="center" sx={{ py: 8 }}><Typography variant="body2" color="text.secondary">No activity detected</Typography></TableCell></TableRow>
                         ) : (
-                            filteredData.map((row) => (
+                            filteredData.map((row: RuleTriggerRow) => (
                                 <TableRow
                                     key={`${row.rule_id}-${row.provider_id}`}
                                     hover

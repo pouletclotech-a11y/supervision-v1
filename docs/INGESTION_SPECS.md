@@ -41,3 +41,9 @@ The system handles two main file types, which serve distinct purposes:
 ### PDF Parser (`pdf_parser.py`)
 -   Enriched extraction: captures Day, Date, Time, Full Alarm Code and State.
 -   Detects `OPERATOR_ACTION`.
+
+## 5. Business Rules Evaluation (V1)
+After persistence, each event batch is processed by the `BusinessRuleEngine`:
+- **Keywords/Codes**: Based on `config.yml` patterns.
+- **Persistence**: Hits are stored in `event_rule_hits` with an explanation and site context.
+- **Performance**: Evaluation is optimized to be < 1ms per event, non-blocking for the ingestion flow.

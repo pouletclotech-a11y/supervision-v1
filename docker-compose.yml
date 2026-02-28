@@ -110,13 +110,8 @@ services:
   frontend:
     build: ./frontend
     container_name: supervision_frontend
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
     ports:
       - "3000:3000"
-    environment:
-      WATCHPACK_POLLING: "true"
     depends_on:
       - backend
     networks:

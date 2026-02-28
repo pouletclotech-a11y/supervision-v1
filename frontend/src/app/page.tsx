@@ -52,7 +52,7 @@ export default function DashboardPage() {
                         { title: 'Pending Imports', value: '3', change: '-2', color: '#f59e0b', icon: <Database /> },
                         { title: 'Active Alerts', value: '12', change: '+4', color: '#ef4444', icon: <AlertTriangle /> },
                     ].map((stat, i) => (
-                        <Grid key={i} size={{ xs: 12, sm: 6, md: 3 }}>
+                        <Grid item key={i} xs={12} sm={6} md={3}>
                             <Paper sx={{ p: 3, position: 'relative', overflow: 'hidden' }}>
                                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', mb: 2 }}>
                                     <Box sx={{ p: 1.5, borderRadius: 2, bgcolor: `${stat.color}22`, color: stat.color }}>
@@ -78,12 +78,12 @@ export default function DashboardPage() {
                 {/* MAIN GRID */}
                 <Grid container spacing={3}>
                     {/* LEFT: INGESTION HEALTH */}
-                    <Grid size={{ xs: 12, md: 8 }}>
+                    <Grid item xs={12} md={8}>
                         <IngestionHealthPanel />
                     </Grid>
 
                     {/* RIGHT: SYSTEM STATUS */}
-                    <Grid size={{ xs: 12, md: 4 }}>
+                    <Grid item xs={12} md={4}>
                         <Paper sx={{ p: 3, height: '100%' }}>
                             <Typography variant="h6" sx={{ mb: 3 }}>System Health</Typography>
 
@@ -128,7 +128,7 @@ export default function DashboardPage() {
                     </Grid>
 
                     {/* FULL WIDTH: RULE TRIGGER MONITORING */}
-                    <Grid size={{ xs: 12 }}>
+                    <Grid item xs={12}>
                         <RuleTriggerPanel />
                     </Grid>
                 </Grid>

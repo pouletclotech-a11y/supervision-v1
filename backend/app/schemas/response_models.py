@@ -21,6 +21,7 @@ class ImportLogOut(BaseModel):
     archived_pdf_hash: Optional[str] = None
     pdf_support_path: Optional[str] = None
     pdf_support_filename: Optional[str] = None
+    match_pct: Optional[float] = None
 
     model_config = ConfigDict(from_attributes=True)
 

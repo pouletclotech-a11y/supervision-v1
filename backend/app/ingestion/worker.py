@@ -26,6 +26,7 @@ from app.ingestion.normalizer import Normalizer
 from app.services.archiver import ArchiverService
 from app.services.provider_resolver import ProviderResolver
 from app.services.classification_service import ClassificationService
+from app.services.business_rules import BusinessRuleEngine
 
 # Phase B1: New Imports
 from app.ingestion.adapters.registry import AdapterRegistry
@@ -295,6 +296,16 @@ async def process_ingestion_item(adapter: BaseAdapter, item: AdapterItem, redis_
                 if unique_events:
                     inserted_db_count = await repo.create_batch(unique_events, import_id=import_log.id)
                     try:
+                        # Phase C: Business Rule Engine (V1)
+                        rule_engine = BusinessRuleEngine(session)
+                        start_rules = time.time()
+                        await rule_engine.evaluate_batch(unique_events)
+                        duration_rules = (time.time() - start_rules) * 1000
+                        logger.info(f"[METRIC] rule_engine_duration_ms={duration_rules:.2f} import_id={import_log.id}")
+                    except Exception as rule_err:
+                        logger.error(f"Business rules evaluation failed: {rule_err}")
+
+                    try:
                         # Exclude from incident reconstruction if handled by incident_service
                         incident_service = IncidentService(session)
                         await incident_service.process_batch_incidents(import_log.id)
@@ -428,7 +439,6 @@ async def worker_loop():
                     results = compute_integrity_check(events_map["xls"], events_map["pdf"])
                     
                     # Update primary import metadata
-                    from app.db.models import ImportLog
                     from app.db.session import engine, AsyncSession
                     async with AsyncSession(engine) as session:
                         import_log = await session.get(ImportLog, primary_import_id)

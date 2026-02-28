@@ -224,6 +224,25 @@ Le clic sur une règle dans le dashboard redirige vers la page **Data Validation
 - `GET /api/v1/rules/trigger-summary?date=YYYY-MM-DD`
 - *Dependencies*: Requires Administrator role.
 
+### Business Rules Engine V1 (Stabilisation)
+Les règles métier sont évaluées automatiquement par le worker après l'ingestion de chaque lot d'événements.
+
+#### Règles V1 Actives
+- `INTRUSION_NO_MAINTENANCE` : Déclenché si intrusion HL alors que le site n'est pas en maintenance.
+- `ABSENCE_TEST` : Détecte l'absence de test cyclique prévu.
+- `TECHNICAL_FAULT` : Capture les codes d'apparition de défaut technique.
+- `EJECTION_48H` : Alerte sur les éjections (code 570) avec cycle de 48h.
+- `ZONE_INHIBITION` : Repère les motifs `***` dans les messages.
+
+#### Configuration (config.yml)
+Les patterns et codes sont centralisés dans la section `business_rules`. Toute modification nécessite un redémarrage du service `worker`.
+
+#### Vérification des Déclenchements
+```bash
+# Voir les dernières règles déclenchées
+docker compose exec db psql -U admin -d supervision -c "SELECT rule_name, count(*) FROM event_rule_hits GROUP BY rule_name;"
+```
+
 #### Structured Logs (Roadmap 4)
 Recherchez ces tags pour valider l'ingestion :
 - `[Ingestion] ATTACHMENT_RECEIVED`: Nouveau fichier détecté.

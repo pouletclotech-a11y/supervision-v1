@@ -79,3 +79,20 @@ normalization:
       severity: "WARNING"
       extract:
         sub_type: 1
+
+# Business Rules V1
+business_rules:
+  intrusion:
+    keywords: [" intrusion\, \effraction\, \vol\, \alarme zone\, \alarme perimetrique\]
+ maintenance_cancel: true
+ absence_test:
+ trigger_keywords: [\absence\, \no test\, \manque test\]
+ cancel_keyword: \test cyclique\
+ faults:
+ apparition_codes: [\710\, \711\, \750\, \301\, \302\, \304\, \342\, \343\, \07\, \383\, \137\, \144\, \145\, \330\, \796\]
+ disparition_suffix: \R\
+ ejection:
+ code: \570\
+ timer_hours: 48
+ inhibition:
+ keyword: \***\

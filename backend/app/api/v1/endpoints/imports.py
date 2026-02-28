@@ -63,6 +63,13 @@ async def read_imports(
             out.pdf_support_path = f"/api/v1/imports/{log.id}/download?file_type=pdf"
             out.pdf_support_filename = "Support.pdf"
 
+        # Integrity match percentage
+        if "integrity_check" in meta:
+            try:
+                out.match_pct = float(meta["integrity_check"].get("match_pct", 0))
+            except (ValueError, TypeError):
+                out.match_pct = 0.0
+
         processed_logs.append(out)
 
     return {

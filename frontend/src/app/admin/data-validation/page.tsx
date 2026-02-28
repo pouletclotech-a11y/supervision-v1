@@ -309,15 +309,35 @@ export default function DataValidationPage() {
             }
         },
         {
-            field: 'status', headerName: 'Status', width: 100,
+            field: 'status', headerName: 'Status', width: 90,
             renderCell: (params: GridRenderCellParams) => {
-                const color = params.value === 'DONE' || params.value === 'SUCCESS' ? 'success' : params.value === 'ERROR' ? 'error' : 'warning';
-                return <Chip label={params.value} color={color} size="small" variant="filled" sx={{ height: 20, fontSize: 10 }} />;
+                let status = params.value;
+                let color: "success" | "error" | "warning" = 'warning';
+
+                if (status === 'SUCCESS' || status === 'DONE') {
+                    if (params.row.match_pct !== undefined && params.row.match_pct < 95) {
+                        status = 'WARNING';
+                        color = 'warning';
+                    } else {
+                        color = 'success';
+                    }
+                } else if (status === 'ERROR') {
+                    color = 'error';
+                }
+
+                return <Chip label={status} color={color} size="small" variant="filled" sx={{ height: 20, fontSize: 10 }} />;
             }
         },
-        { field: 'events_count', headerName: 'Evts', width: 80, align: 'right' },
-        { field: 'duplicates_count', headerName: 'Dups', width: 80, align: 'right' },
-        { field: 'unmatched_count', headerName: 'Unm', width: 80, align: 'right' },
+        {
+            field: 'match_pct', headerName: 'Integrity', width: 80, align: 'center',
+            renderCell: (params: GridRenderCellParams) => {
+                if (params.value === undefined || params.value === null) return <Typography variant="caption" color="text.disabled">—</Typography>;
+                const color = params.value >= 95 ? 'success.main' : params.value >= 80 ? 'warning.main' : 'error.main';
+                return <Typography variant="body2" sx={{ fontWeight: 'bold', color }}>{params.value.toFixed(1)}%</Typography>;
+            }
+        },
+        { field: 'events_count', headerName: 'Evts', width: 70, align: 'right' },
+        { field: 'unmatched_count', headerName: 'Unm', width: 70, align: 'right' },
     ], []);
 
 
@@ -545,6 +565,15 @@ export default function DataValidationPage() {
                                 <option value="ERROR">ERROR</option>
                                 <option value="DONE">DONE</option>
                             </TextField>
+                            <Button
+                                size="small"
+                                variant={importStatusFilter === 'ERROR' ? 'contained' : 'outlined'}
+                                color="error"
+                                onClick={() => setImportStatusFilter(importStatusFilter === 'ERROR' ? '' : 'ERROR')}
+                                sx={{ fontSize: 9, minWidth: 60 }}
+                            >
+                                Errors Only
+                            </Button>
                             <Button size="small" variant="outlined" onClick={() => { setImportStatusFilter(''); setImportDateFrom(''); setImportDateTo(''); }} sx={{ fontSize: 9 }}>Clear</Button>
                         </Box>
                         <Box sx={{ display: 'flex', gap: 1 }}>

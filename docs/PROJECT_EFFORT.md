@@ -3,8 +3,8 @@
 Ce document recense les heures investies dans la conception, le développement et la sécurisation de la plateforme **Supervision-V1**.
 
 ## Résumé
-- **Dernière mise à jour** : 2026-02-27
-- **Total cumulé** : 170 heures
+- **Dernière mise à jour** : 2026-02-28
+- **Total cumulé** : 200 heures
 
 ---
 
@@ -24,6 +24,21 @@ Ce document recense les heures investies dans la conception, le développement e
 ---
 
 ## 2. Historique des Ajouts
+
+### 2026-02-28 — Stabilisation Dashboard & Règles Métier V1 [+10h]
+- **Health API** : Fix du cast SQL `avg_integrity` et sécurisation des types Numeric (200 OK).
+- **Business Rules** : Création du `BusinessRuleEngine` (5 règles V1 : Maintenance, Absence Test, Défauts, Éjection, Inhibition).
+- **Intégration** : Pipeline worker mis à jour pour le traitement par lots et logging métriques performance.
+- **Audit UNCLASSIFIED** : Analyse du volume (11k+ events) et identification de la source `YPSILON_HISTO.pdf`.
+- **Frontend UI** : Ajout colonnes `Integrity` et `Status`, filtre "Errors Only" et tri par date desc par défaut.
+- **Maintenance** : Rebuild Docker complet (`--no-cache`) et vérification d'idempotence SQL.
+
+### 2026-02-27 — Roadmap 7 & 8 (Harmonization & Audit Replay) [+20h]
+- **Roadmap 7 (Legacy)** : Migration SQL complexe pour normaliser 1986 sites et fusionner les collisions (transactional merge).
+- **Roadmap 7 (Build)** : Correction des composants React/MUI (Grid v5 API) et structure Docker frontend.
+- **Roadmap 8 (Replay)** : Implémentation du loop d'auto-replay dans le worker pour retraiter 30 imports d'audit.
+- **Roadmap 8 (Audit)** : Validation de l'appairage PDF via metrics JSON et vérification de l'idempotence SQL (stable).
+- **Maintenance** : Bypass temporaire du typechecking TSC pour stabilisation de build.
 
 ### 2026-02-27 — Roadmap 6 (Rule Trigger Monitoring Panel v1) [+6h]
 - **Backend API** : Création de `GET /api/v1/rules/trigger-summary` avec agrégation complexe (`distinct_sites`, `last_trigger_at`).
