@@ -1,10 +1,10 @@
 from typing import List, Any
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc
 from app.db.session import get_db
 from app.db.models import Event
-from app.schemas.response_models import EventOut
+from app.schemas.response_models import EventOut, EventDetailOut
 from app.services.repository import EventRepository
 
 router = APIRouter()
@@ -34,4 +34,34 @@ async def read_events(
         evt_out.triggered_rules = hits_map.get(evt.id, [])
         out.append(evt_out)
         
+    return out
+@router.get("/{id}", response_model=EventDetailOut)
+async def get_event_details(
+    id: int,
+    db: AsyncSession = Depends(get_db)
+) -> Any:
+    """
+    Phase 3: Detailed view of a single event.
+    """
+    from app.db.models import EventRuleHit
+    from sqlalchemy import func
+
+    # Query event
+    stmt = select(Event).where(Event.id == id)
+    result = await db.execute(stmt)
+    event = result.scalar_one_or_none()
+    
+    if not event:
+        raise HTTPException(status_code=404, detail="Event not found")
+
+    # Get score if any
+    hit_stmt = select(EventRuleHit.score).where(EventRuleHit.event_id == id).limit(1)
+    hit_res = await db.execute(hit_stmt)
+    score = hit_res.scalar()
+
+    # Model map
+    out = EventDetailOut.model_validate(event)
+    out.score = score
+    out.created_at = event.created_at # Ensure mapping if needed
+    
     return out

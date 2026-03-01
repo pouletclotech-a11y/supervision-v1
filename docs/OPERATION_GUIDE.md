@@ -1,7 +1,7 @@
 # Operation Guide
 
 > [!NOTE]
-> **Dernière mise à jour** : 2026-02-22 — Phase 2.A terminée. Backend opérationnel.
+> **Dernière mise à jour** : 2026-03-01 — Phase 3 terminée. UX Opérationnelle enrichie.
 
 ---
 
@@ -544,3 +544,32 @@ Pour calibrer les seuils sans perdre de données :
 - **Logs**:
   - `[SCORING_SKIPPED]`: Hit ignoré car score < seuil.
   - `[SCORING_INVALID_OVERRIDE]`: Override ignoré car type ou valeur invalide.
+
+---
+
+## 11. Phase 3 — UX Opérationnelle (Enrichissement)
+
+### Alertes Cliquables & Drill-down
+Le dashboard affiche désormais les alertes individuelles (hits).
+- **Action** : Cliquer sur une ligne d'alerte ouvre un **Event Detail Drawer**.
+- **Contenu du Drawer** : Message brut, score de confiance, et liens directs vers l'import source ou la page client.
+
+### Recherche Globale Site
+Un champ de recherche est présent dans le header.
+- **Usage** : Saisir un code site (chiffres uniquement).
+- **Action** : Redirection automatique vers la page dashboard du client.
+
+### Dashboard Client Site
+Accessible via `/client/{site_code}`.
+- **KPIs (7j)** : Volume d'événements, volume d'alertes, top règles déclenchées.
+- **TL Events** : Historique complet des événements du site (paginé).
+- **TL Alerts** : Historique des alertes (hits) associées au site.
+
+### Replay Piloté (Safe)
+La gestion des règles permet de relancer un rejeu sur une plage de dates.
+- **Sécurité** : Le bouton "Replay" en UI utilise exclusivement le mode **REPLACE** (non-destructif pour le reste de la base).
+- **Confirmation** : Une modale récapitule les dates avant exécution.
+
+### Performance (Phase 3)
+Les endpoints de la phase 3 sont optimisés par des index SQL (`ix_events_site_code`, `ix_event_rule_hits_created_at`).
+- **Audit** : Utiliser `EXPLAIN ANALYZE` sur les requêtes complexes de jointure (backend/benchmark_phase3.py).

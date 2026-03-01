@@ -58,7 +58,12 @@ class ExcelParser(BaseParser):
             df = pd.read_excel(file_path, header=None, engine='openpyxl')
             logger.info(f" [XLSX_ROWS_DETECTED] count={len(df)}")
             
-            # Detect format (Condition 6 - Zéro Hardcode)
+            # Diagnostic Log: Raw sample content
+            if not df.empty:
+                sample = df.head(3).to_dict(orient='records')
+                logger.info(f" [XLSX_RAW_ROWS_CONTENT_SAMPLE] sample={sample}")
+            else:
+                logger.warning(f" [XLSX_RAW_ROWS_CONTENT_SAMPLE] EMPTY DATAFRAME")
             is_histo = False
             if parser_config and parser_config.get("format") == "HISTO":
                 is_histo = True

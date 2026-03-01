@@ -181,6 +181,47 @@ class EventRepository:
         conditions = result.scalars().all()
         return {c.code: c for c in conditions}
 
+    async def get_events_for_rule(self, rule_id: int, page: int = 1, limit: int = 50):
+        """
+        Drill-down: Fetch events that triggered a specific rule.
+        Returns (items, total).
+        """
+        from app.db.models import EventRuleHit, MonitoringProvider
+        
+        # Base query to get events that have hits for this rule
+        stmt = (
+            select(
+                Event,
+                EventRuleHit.created_at.label("matched_at"),
+                EventRuleHit.hit_metadata.label("hit_metadata"),
+                MonitoringProvider.label.label("provider_label")
+            )
+            .join(EventRuleHit, Event.id == EventRuleHit.event_id)
+            .join(ImportLog, Event.import_id == ImportLog.id)
+            .join(MonitoringProvider, ImportLog.provider_id == MonitoringProvider.id)
+            .where(EventRuleHit.rule_id == rule_id)
+            .order_by(EventRuleHit.created_at.desc())
+        )
+        
+        # Pagination
+        count_stmt = select(func.count()).select_from(stmt.subquery())
+        total = await self.session.scalar(count_stmt)
+        
+        stmt = stmt.offset((page - 1) * limit).limit(limit)
+        result = await self.session.execute(stmt)
+        rows = result.all()
+        
+        items = []
+        for r in rows:
+            evt = r.Event
+            # Attach extra info for the schema
+            evt.matched_at = r.matched_at
+            evt.hit_metadata_drilldown = r.hit_metadata
+            evt.provider_label = r.provider_label
+            items.append(evt)
+            
+        return items, total or 0
+
     async def count_v3_matches(
         self,
         site_code: str,
@@ -460,13 +501,8 @@ class EventRepository:
         start_date = target_date.replace(hour=0, minute=0, second=0, microsecond=0)
         end_date = start_date + timedelta(days=1)
 
-        # Labels subquery
-        provider_stmt = select(MonitoringProvider.id, MonitoringProvider.label, MonitoringProvider.code)
-        providers_res = await self.session.execute(provider_stmt)
-        providers_map = {p.id: {"label": p.label, "code": p.code} for p in providers_res.all()}
-
-        # Aggregation query
-        stmt = (
+        # Subquery for aggregation
+        stats_stmt = (
             select(
                 ImportLog.provider_id,
                 func.count(ImportLog.id).label("total_imports"),
@@ -474,15 +510,24 @@ class EventRepository:
                 func.count().filter(ImportLog.filename.ilike("%.xls%")).label("total_xls"),
                 func.count().filter(ImportLog.filename.ilike("%.pdf%")).label("total_pdf"),
                 func.sum(ImportLog.events_count).label("total_events"),
-                func.avg(
+                func.sum(
                     cast(
                         func.nullif(
-                            func.jsonb_extract_path_text(ImportLog.import_metadata, 'integrity_check', 'match_pct'),
+                            func.jsonb_extract_path_text(ImportLog.import_metadata, 'integrity_check', 'received_rows'),
                             ''
                         ),
                         Numeric
                     )
-                ).label("avg_integrity"),
+                ).label("integrity_numerator"),
+                func.sum(
+                    cast(
+                        func.nullif(
+                            func.jsonb_extract_path_text(ImportLog.import_metadata, 'integrity_check', 'expected_rows'),
+                            ''
+                        ),
+                        Numeric
+                    )
+                ).label("integrity_denominator"),
                 func.count().filter(
                     ImportLog.filename.ilike("%.xls%"),
                     func.jsonb_extract_path_text(ImportLog.import_metadata, 'pdf_support').is_(None)
@@ -493,6 +538,25 @@ class EventRepository:
                 ImportLog.created_at < end_date
             )
             .group_by(ImportLog.provider_id)
+        ).subquery()
+
+        # Final query joining with ALL active providers
+        stmt = (
+            select(
+                MonitoringProvider.id.label("provider_id"),
+                MonitoringProvider.label.label("provider_label"),
+                MonitoringProvider.code.label("provider_code"),
+                func.coalesce(stats_stmt.c.total_imports, 0).label("total_imports"),
+                func.coalesce(stats_stmt.c.total_emails, 0).label("total_emails"),
+                func.coalesce(stats_stmt.c.total_xls, 0).label("total_xls"),
+                func.coalesce(stats_stmt.c.total_pdf, 0).label("total_pdf"),
+                func.coalesce(stats_stmt.c.total_events, 0).label("total_events"),
+                func.coalesce(stats_stmt.c.integrity_numerator, 0).label("integrity_numerator"),
+                func.coalesce(stats_stmt.c.integrity_denominator, 0).label("integrity_denominator"),
+                func.coalesce(stats_stmt.c.missing_pdf, 0).label("missing_pdf")
+            )
+            .join(stats_stmt, MonitoringProvider.id == stats_stmt.c.provider_id, isouter=True)
+            .where(MonitoringProvider.is_active == True)
         )
 
         result = await self.session.execute(stmt)
@@ -500,21 +564,25 @@ class EventRepository:
 
         summary = []
         for row in rows:
-            p_info = providers_map.get(row.provider_id, {"label": f"Unknown ({row.provider_id})", "code": "UNKNOWN"})
-            
-            data = {
+            # Recompute avg_integrity locally to avoid float issues in query
+            numerator = float(row.integrity_numerator or 0)
+            denominator = float(row.integrity_denominator or 0)
+            avg_integrity = (numerator / denominator * 100) if denominator > 0 else 0
+
+            summary.append({
                 "provider_id": row.provider_id,
-                "provider_label": p_info["label"],
-                "provider_code": p_info["code"],
+                "provider_label": row.provider_label,
+                "provider_code": row.provider_code,
                 "total_imports": row.total_imports,
                 "total_emails": row.total_emails,
                 "total_xls": row.total_xls,
                 "total_pdf": row.total_pdf,
                 "total_events": int(row.total_events or 0),
-                "avg_integrity": float(row.avg_integrity or 0),
+                "integrity_numerator": int(numerator),
+                "integrity_denominator": int(denominator),
+                "avg_integrity": float(avg_integrity),
                 "missing_pdf": row.missing_pdf
-            }
-            summary.append(data)
+            })
 
         return summary
 
@@ -569,6 +637,21 @@ class EventRepository:
         return summary
 
 class AdminRepository:
+    async def update_provider_monitoring(self, provider_id: int, data: dict) -> Optional[MonitoringProvider]:
+        stmt = select(MonitoringProvider).where(MonitoringProvider.id == provider_id)
+        result = await self.session.execute(stmt)
+        provider = result.scalar_one_or_none()
+        
+        if not provider:
+            return None
+            
+        for key, value in data.items():
+            if hasattr(provider, key):
+                setattr(provider, key, value)
+                
+        await self.session.flush()
+        return provider
+
     def __init__(self, session: AsyncSession):
         self.session = session
 

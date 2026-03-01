@@ -175,10 +175,13 @@ export default function Layout({ children }: LayoutProps) {
                             component="form"
                             onSubmit={(e) => {
                                 e.preventDefault();
-                                if (searchQuery.trim()) {
-                                    setReportSiteCode(searchQuery.trim());
-                                    setReportOpen(true);
+                                const site = searchQuery.trim();
+                                if (!/^\d+$/.test(site)) {
+                                    alert("Site Code must be digits only (ex: 69000).");
+                                    return;
                                 }
+                                router.push(`/client/${site}`);
+                                setSearchQuery('');
                             }}
                             sx={{
                                 p: '2px 4px',

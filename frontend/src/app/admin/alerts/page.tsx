@@ -102,6 +102,10 @@ export default function RulesPage() {
     const [error, setError] = useState<string | null>(null);
     const [replayLoading, setReplayLoading] = useState(false);
     const [replayMessage, setReplayMessage] = useState<string | null>(null);
+    const [replayDialogOpen, setReplayDialogOpen] = useState(false);
+    const [replayDateFrom, setReplayDateFrom] = useState('');
+    const [replayDateTo, setReplayDateTo] = useState('');
+    const [replayStats, setReplayStats] = useState<any>(null);
 
     // FETCH
     const fetchRules = async () => {
@@ -224,13 +228,23 @@ export default function RulesPage() {
     };
 
     const handleReplay = async () => {
-        if (!confirm('This will re-process ALL historical events against ACTIVE rules. Determine alerts?')) return;
         setReplayLoading(true);
+        setReplayStats(null);
         try {
-            const res = await fetchWithAuth('/alerts/replay', { method: 'POST' });
+            const res = await fetchWithAuth('/rules/replay-all', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    date_from: replayDateFrom ? new Date(replayDateFrom).toISOString() : null,
+                    date_to: replayDateTo ? new Date(replayDateTo).toISOString() : null,
+                    mode: 'REPLACE'
+                })
+            });
             if (!res.ok) throw new Error('Replay failed');
-            setReplayMessage('Replay started in background...');
-            setTimeout(() => setReplayMessage(null), 5000);
+            const data = await res.json();
+            setReplayStats(data);
+            setReplayMessage(`Replay completed: ${data.events_processed} processed, ${data.delta} hits delta.`);
+            fetchRules();
         } catch (err: any) {
             alert(err.message);
         } finally {
@@ -367,10 +381,10 @@ export default function RulesPage() {
                             variant="outlined"
                             color="warning"
                             startIcon={<Play size={16} />}
-                            onClick={handleReplay}
+                            onClick={() => setReplayDialogOpen(true)}
                             disabled={replayLoading}
                         >
-                            {replayLoading ? 'Replaying...' : 'Replay Rules'}
+                            Replay Rules
                         </Button>
                         <Button
                             variant="contained"
@@ -685,6 +699,56 @@ export default function RulesPage() {
                     </DialogContent>
                     <DialogActions>
                         <Button onClick={() => setDryRunOpen(false)}>Fermer</Button>
+                    </DialogActions>
+                </Dialog>
+
+                {/* REPLAY DIALOG */}
+                <Dialog open={replayDialogOpen} onClose={() => !replayLoading && setReplayDialogOpen(false)} maxWidth="xs" fullWidth>
+                    <DialogTitle>Replay Detection Rules</DialogTitle>
+                    <DialogContent dividers>
+                        <Typography variant="body2" color="text.secondary" gutterBottom>
+                            Select a date range to re-evaluate rules.
+                            Uses <strong>REPLACE</strong> mode (safe, replaces existing hits for the period).
+                        </Typography>
+                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 2 }}>
+                            <TextField
+                                label="Date From"
+                                type="date"
+                                fullWidth
+                                InputLabelProps={{ shrink: true }}
+                                value={replayDateFrom}
+                                onChange={(e) => setReplayDateFrom(e.target.value)}
+                            />
+                            <TextField
+                                label="Date To"
+                                type="date"
+                                fullWidth
+                                InputLabelProps={{ shrink: true }}
+                                value={replayDateTo}
+                                onChange={(e) => setReplayDateTo(e.target.value)}
+                            />
+                        </Box>
+
+                        {replayStats && (
+                            <Paper sx={{ mt: 2, p: 2, bgcolor: 'success.main', color: 'white' }}>
+                                <Typography variant="caption" display="block">Replay Success</Typography>
+                                <Typography variant="body2" fontWeight={700}>
+                                    Processed: {replayStats.events_processed} | Delta: {replayStats.delta}
+                                </Typography>
+                            </Paper>
+                        )}
+                    </DialogContent>
+                    <DialogActions>
+                        <Button onClick={() => setReplayDialogOpen(false)} disabled={replayLoading}>Cancel</Button>
+                        <Button
+                            onClick={handleReplay}
+                            variant="contained"
+                            color="warning"
+                            disabled={replayLoading}
+                            startIcon={replayLoading ? <CircularProgress size={16} color="inherit" /> : <Play size={16} />}
+                        >
+                            {replayLoading ? 'Replaying...' : 'Confirm Replay'}
+                        </Button>
                     </DialogActions>
                 </Dialog>
 

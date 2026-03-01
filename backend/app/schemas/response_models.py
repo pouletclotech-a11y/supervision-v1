@@ -163,3 +163,55 @@ class ClientReportOut(BaseModel):
     timeline: List[EventOut]
 
     model_config = ConfigDict(from_attributes=True)
+
+# --- Phase 3: UX Enhancements ---
+
+class AlertListItem(BaseModel):
+    hit_id: int
+    rule_id: int
+    rule_name: str
+    score: Optional[float] = None
+    created_at: datetime
+    site_code: str
+    client_name: Optional[str] = None
+    provider_name: Optional[str] = None
+    event_id: int
+    import_id: Optional[int] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+class AlertListResponse(BaseModel):
+    items: List[AlertListItem]
+    total: int
+    page: int
+    limit: int
+
+class EventDetailOut(BaseModel):
+    id: int
+    message: Optional[str] = Field(None, validation_alias="raw_message")
+    normalized_message: Optional[str] = None
+    raw_code: Optional[str] = None
+    dup_count: int = 0
+    site_code: Optional[str] = None
+    site_code_raw: Optional[str] = None
+    import_id: Optional[int] = None
+    created_at: datetime
+    score: Optional[float] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+class SiteLookupOut(BaseModel):
+    site_code: str
+    client_name: Optional[str] = None
+    provider_name: Optional[str] = None
+
+class SiteTopRule(BaseModel):
+    rule_name: str
+    count: int
+
+class ClientSiteSummaryOut(BaseModel):
+    site_code: str
+    client_name: Optional[str] = None
+    provider_name: Optional[str] = None
+    kpis: dict # events_count, alerts_count, last_event_at, last_alert_at, top_rules: List[SiteTopRule]
+    timeline: dict # {"events": EventListOut, "alerts": AlertListResponse}

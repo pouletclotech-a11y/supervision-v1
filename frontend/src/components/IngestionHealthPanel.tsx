@@ -29,6 +29,8 @@ interface HealthRow {
     total_xls: number;
     total_pdf: number;
     total_events: number;
+    integrity_numerator: number;
+    integrity_denominator: number;
     avg_integrity: number;
     missing_pdf: number;
     health_status: 'OK' | 'WARNING' | 'CRITICAL';
@@ -171,11 +173,14 @@ export default function IngestionHealthPanel() {
                                         <Typography variant="body2" fontWeight={700}>{row.total_events.toLocaleString()}</Typography>
                                     </TableCell>
                                     <TableCell align="center">
-                                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1 }}>
-                                            <Typography variant="body2" color={row.avg_integrity >= 95 ? 'success.main' : 'warning.main'} fontWeight={600}>
-                                                {row.avg_integrity.toFixed(1)}%
-                                            </Typography>
-                                        </Box>
+                                        <Tooltip title={`Total: ${row.integrity_numerator} / Attendus: ${row.integrity_denominator}`}>
+                                            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1 }}>
+                                                <Typography variant="body2" color={row.avg_integrity >= 95 ? 'success.main' : 'warning.main'} fontWeight={600}>
+                                                    {row.avg_integrity.toFixed(1)}%
+                                                </Typography>
+                                                <Info size={12} style={{ opacity: 0.5 }} />
+                                            </Box>
+                                        </Tooltip>
                                     </TableCell>
                                     <TableCell align="center">
                                         {row.missing_pdf > 0 ? (
@@ -217,10 +222,11 @@ export default function IngestionHealthPanel() {
                     </Typography>
                     <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
                         {dailyReceipt.map((r) => {
-                            const statusColor = r.status === 'OK' ? 'success.main' : r.status === 'WARNING' ? 'warning.main' : 'error.main';
+                            const statusColor = r.status === 'OK' ? 'success.main' : (r.status === 'CRITICAL' ? 'error.main' : 'warning.main');
+                            const bgColor = r.status === 'OK' ? '#2e7d32' : (r.status === 'CRITICAL' ? '#d32f2f' : '#ed6c02');
                             const deltaLabel = r.delta > 0 ? `+${r.delta}` : `${r.delta}`;
                             return (
-                                <Box key={r.provider_id} sx={{ px: 1.5, py: 1, borderRadius: 2, border: '1px solid', borderColor: statusColor, bgcolor: `${r.status === 'OK' ? '#2e7d32' : r.status === 'WARNING' ? '#ed6c02' : '#d32f2f'}14`, minWidth: 120, textAlign: 'center' }}>
+                                <Box key={r.provider_id} sx={{ px: 1.5, py: 1, borderRadius: 2, border: '1px solid', borderColor: statusColor, bgcolor: `${bgColor}14`, minWidth: 120, textAlign: 'center' }}>
                                     <Typography variant="h6" fontWeight={700} color={statusColor}>
                                         {r.received_today} / {r.expected_today === 0 ? '—' : r.expected_today}
                                     </Typography>

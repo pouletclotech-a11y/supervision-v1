@@ -99,7 +99,36 @@ class ProviderOut(BaseModel):
 # We can remove ProviderCreate/Update if we use the central ones
 
 
+from app.schemas.response_models import SiteLookupOut
+
 # ===== Endpoints =====
+
+@router.get("/lookup", response_model=SiteLookupOut)
+async def lookup_site(
+    site_code: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+) -> Any:
+    """
+    Phase 3: Fast lookup for a site_code (digits only expected from frontend).
+    """
+    stmt = (
+        select(
+            SiteConnection.code_site.label("site_code"),
+            SiteConnection.client_name,
+            MonitoringProvider.label.label("provider_name")
+        )
+        .outerjoin(MonitoringProvider, SiteConnection.provider_code == MonitoringProvider.code)
+        .where(SiteConnection.code_site == site_code)
+    )
+    
+    result = await db.execute(stmt)
+    site = result.first()
+    
+    if not site:
+        raise HTTPException(status_code=404, detail="Site not found")
+        
+    return site
 
 @router.get("/stats", response_model=StatsResponse)
 async def get_connection_stats(

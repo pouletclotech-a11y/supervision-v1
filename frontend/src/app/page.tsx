@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import IngestionHealthPanel from '../components/IngestionHealthPanel';
 import RuleTriggerPanel from '../components/RuleTriggerPanel';
+import AlertsListPanel from '../components/AlertsListPanel';
 
 export default function DashboardPage() {
     return (
@@ -130,6 +131,11 @@ export default function DashboardPage() {
                     {/* FULL WIDTH: RULE TRIGGER MONITORING */}
                     <Grid item xs={12}>
                         <RuleTriggerPanel />
+                    </Grid>
+
+                    {/* NEW: INDIVIDUAL ALERTS LIST */}
+                    <Grid item xs={12}>
+                        <AlertsListPanel />
                     </Grid>
                 </Grid>
 

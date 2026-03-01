@@ -28,12 +28,20 @@ class RuleTriggerSummary(BaseModel):
     summary: List[RuleTriggerRow]
 
 
-class ReplayResult(BaseModel):
-    status: str
-    events_processed: int
-    hits_before: int
-    hits_after: int
-    delta: int
+class RuleHitDrillDownRow(BaseModel):
+    id: int
+    matched_at: datetime
+    provider_label: str
+    site_code: Optional[str]
+    client_name: Optional[str]
+    raw_message: str
+    hit_metadata: Optional[Dict] = None
+
+class RuleHitDrillDownResponse(BaseModel):
+    items: List[RuleHitDrillDownRow]
+    total: int
+    page: int
+    limit: int
 
 
 class ActiveRuleOut(BaseModel):
@@ -141,4 +149,40 @@ async def replay_all_rules(
         raise HTTPException(status_code=400, detail=str(ve))
     except Exception as e:
         logger.error(f"[API_REPLAY_ERROR] {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Replay failed: {str(e)}")
+@router.get("/{rule_id}/events", response_model=RuleHitDrillDownResponse)
+async def get_rule_hits_drilldown(
+    rule_id: int,
+    page: int = Query(1, ge=1),
+    limit: int = Query(50, ge=1, le=100),
+    db: AsyncSession = Depends(get_db)
+) -> Any:
+    """
+    Drill-down: Get detailed event information for rule monitoring hits.
+    """
+    repo = EventRepository(db)
+    items, total = await repo.get_events_for_rule(rule_id, page, limit)
+    
+    return {
+        "items": [
+            {
+                "id": evt.id,
+                "matched_at": evt.matched_at,
+                "provider_label": evt.provider_label,
+                "site_code": evt.site_code,
+                "client_name": evt.client_name,
+                "raw_message": evt.raw_message,
+                "hit_metadata": evt.hit_metadata_drilldown
+            }
+            for evt in items
+        ],
+        "total": total,
+        "page": page,
+        "limit": limit
+    }
+
+class ReplayResult(BaseModel):
+    status: str
+    events_processed: int
+    hits_before: int
+    hits_after: int
+    delta: int

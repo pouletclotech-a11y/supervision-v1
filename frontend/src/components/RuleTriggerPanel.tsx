@@ -18,9 +18,22 @@ import {
     Alert,
     TextField
 } from '@mui/material';
-import { RefreshCw, Activity, AlertTriangle, CheckCircle, Clock, Filter, ExternalLink } from 'lucide-react';
+import { RefreshCw, Activity, AlertTriangle, CheckCircle, Clock, Filter, ExternalLink, Info } from 'lucide-react';
 import { fetchWithAuth } from '../lib/api';
 import { useRouter } from 'next/navigation';
+import { format } from 'date-fns';
+import {
+    Dialog,
+    DialogTitle,
+    DialogContent,
+    DialogActions,
+    Button,
+    List,
+    ListItem,
+    ListItemText,
+    Divider
+} from '@mui/material';
+import EventDetailDrawer from './EventDetailDrawer';
 
 interface RuleTriggerRow {
     rule_id: number;
@@ -43,6 +56,18 @@ export default function RuleTriggerPanel() {
     const [selectedDate, setSelectedDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
     const router = useRouter();
 
+    // Drilldown state
+    const [drilldownOpen, setDrilldownOpen] = useState(false);
+    const [selectedRule, setSelectedRule] = useState<RuleTriggerRow | null>(null);
+    const [drilldownData, setDrilldownData] = useState<any[]>([]);
+    const [drilldownLoading, setDrilldownLoading] = useState(false);
+    const [drilldownTotal, setDrilldownTotal] = useState(0);
+    const [drilldownPage, setDrilldownPage] = useState(1);
+
+    // Event Detail Drawer
+    const [selectedEventId, setSelectedEventId] = useState<number | null>(null);
+    const [drawerOpen, setDrawerOpen] = useState(false);
+
     const fetchData = async (dateStr?: string) => {
         setLoading(true);
         try {
@@ -56,10 +81,24 @@ export default function RuleTriggerPanel() {
             } else {
                 setError('Failed to fetch rule trigger summary');
             }
-        } catch (err) {
-            setError('Error connecting to rules API');
         } finally {
             setLoading(false);
+        }
+    };
+
+    const fetchDrilldown = async (ruleId: number, page: number = 1) => {
+        setDrilldownLoading(true);
+        try {
+            const res = await fetchWithAuth(`/rules/${ruleId}/events?page=${page}&limit=20`);
+            if (res.ok) {
+                const json = await res.json();
+                setDrilldownData(json.items || []);
+                setDrilldownTotal(json.total || 0);
+            }
+        } catch (err) {
+            console.error("Failed to fetch drilldown", err);
+        } finally {
+            setDrilldownLoading(false);
         }
     };
 
@@ -82,11 +121,16 @@ export default function RuleTriggerPanel() {
         }
     };
 
-    const handleRowClick = (ruleName: string) => {
-        // Rediriger vers la page de validation avec filtre par règle
-        const searchParams = new URLSearchParams();
-        searchParams.set('rule', ruleName);
-        router.push(`/admin/data-validation?${searchParams.toString()}`);
+    const handleRowClick = (row: RuleTriggerRow) => {
+        setSelectedRule(row);
+        setDrilldownPage(1);
+        setDrilldownOpen(true);
+        fetchDrilldown(row.rule_id, 1);
+    };
+
+    const handleEventClick = (eventId: number) => {
+        setSelectedEventId(eventId);
+        setDrawerOpen(true);
     };
 
     const filteredData = data.filter((row: RuleTriggerRow) =>
@@ -161,7 +205,7 @@ export default function RuleTriggerPanel() {
                                     key={`${row.rule_id}-${row.provider_id}`}
                                     hover
                                     sx={{ cursor: 'pointer' }}
-                                    onClick={() => handleRowClick(row.rule_name)}
+                                    onClick={() => handleRowClick(row)}
                                 >
                                     <TableCell>
                                         <Typography variant="body2" fontWeight={600} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -191,6 +235,80 @@ export default function RuleTriggerPanel() {
                     </TableBody>
                 </Table>
             </TableContainer>
+
+            {/* Drilldown Dialog */}
+            <Dialog
+                open={drilldownOpen}
+                onClose={() => setDrilldownOpen(false)}
+                maxWidth="md"
+                fullWidth
+                PaperProps={{ sx: { borderRadius: 3 } }}
+            >
+                <DialogTitle>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <Box>
+                            <Typography variant="h6" fontWeight={700}>{selectedRule?.rule_name}</Typography>
+                            <Typography variant="caption" color="text.secondary">
+                                {selectedRule?.provider_label} | {selectedRule?.total_triggers} triggers (Page {drilldownPage})
+                            </Typography>
+                        </Box>
+                        <Chip label={selectedRule?.health_status} size="small" color={selectedRule?.health_status === 'HIGH_ACTIVITY' ? 'error' : 'success'} />
+                    </Box>
+                </DialogTitle>
+                <DialogContent dividers sx={{ p: 0 }}>
+                    {drilldownLoading ? (
+                        <Box sx={{ p: 4, textAlign: 'center' }}><CircularProgress size={24} /></Box>
+                    ) : (
+                        <TableContainer sx={{ maxHeight: 400 }}>
+                            <Table size="small" stickyHeader>
+                                <TableHead>
+                                    <TableRow>
+                                        <TableCell sx={{ fontWeight: 600 }}>Télémétrie / Déclenchement</TableCell>
+                                        <TableCell sx={{ fontWeight: 600 }}>Site</TableCell>
+                                        <TableCell sx={{ fontWeight: 600 }}>Message</TableCell>
+                                    </TableRow>
+                                </TableHead>
+                                <TableBody>
+                                    {drilldownData.map((item) => (
+                                        <TableRow key={item.id} hover onClick={() => handleEventClick(item.id)} sx={{ cursor: 'pointer' }}>
+                                            <TableCell sx={{ fontSize: '0.75rem', whiteSpace: 'nowrap' }}>
+                                                {format(new Date(item.matched_at), 'dd/MM HH:mm:ss')}
+                                            </TableCell>
+                                            <TableCell>
+                                                <Typography variant="body2" fontWeight={600}>{item.site_code}</Typography>
+                                                <Typography variant="caption" color="text.secondary">{item.client_name}</Typography>
+                                            </TableCell>
+                                            <TableCell sx={{ fontSize: '0.75rem', fontFamily: 'monospace', maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                {item.raw_message}
+                                            </TableCell>
+                                        </TableRow>
+                                    ))}
+                                </TableBody>
+                            </Table>
+                        </TableContainer>
+                    )}
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={() => setDrilldownOpen(false)}>Fermer</Button>
+                    <Button
+                        variant="outlined"
+                        size="small"
+                        onClick={() => {
+                            const searchParams = new URLSearchParams();
+                            searchParams.set('rule', selectedRule?.rule_name || '');
+                            router.push(`/admin/data-validation?${searchParams.toString()}`);
+                        }}
+                    >
+                        Explorer dans Validation
+                    </Button>
+                </DialogActions>
+            </Dialog>
+
+            <EventDetailDrawer
+                eventId={selectedEventId}
+                open={drawerOpen}
+                onClose={() => setDrawerOpen(false)}
+            />
         </Paper>
     );
 }

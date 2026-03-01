@@ -1,18 +1,92 @@
 import logging
+from datetime import datetime
 from typing import Any, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete
-
 from app.db.session import get_db
-from app.db.models import AlertRule, Event, ReplayJob, User, RuleCondition
-from app.schemas.response_models import AlertRuleOut, AlertRuleCreate, AlertRuleUpdate
+from app.db.models import AlertRule, Event, ReplayJob, User, RuleCondition, EventRuleHit, MonitoringProvider, ImportLog
+from app.schemas.response_models import AlertRuleOut, AlertRuleCreate, AlertRuleUpdate, AlertListResponse, AlertListItem
 from app.services.alerting import AlertingService
 from app.services.repository import EventRepository
 from app.auth.deps import get_current_operator_or_admin
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+@router.get("/", response_model=AlertListResponse)
+async def list_alerts(
+    page: int = 1,
+    limit: int = 50,
+    date_from: Optional[datetime] = None,
+    date_to: Optional[datetime] = None,
+    provider: Optional[str] = None,
+    site_code: Optional[str] = None,
+    sort_by: str = "created_at",
+    sort_order: str = "desc",
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_operator_or_admin)
+) -> Any:
+    """
+    Phase 3: Paginated & Filtered alerts list.
+    """
+    from sqlalchemy import desc, asc, func
+
+    skip = (page - 1) * limit
+
+    # Query with joins
+    stmt = (
+        select(
+            EventRuleHit.id.label("hit_id"),
+            EventRuleHit.rule_id,
+            EventRuleHit.rule_name,
+            EventRuleHit.score,
+            EventRuleHit.created_at,
+            Event.site_code,
+            Event.client_name,
+            MonitoringProvider.label.label("provider_name"),
+            Event.id.label("event_id"),
+            Event.import_id
+        )
+        .join(Event, EventRuleHit.event_id == Event.id)
+        .outerjoin(ImportLog, Event.import_id == ImportLog.id)
+        .outerjoin(MonitoringProvider, ImportLog.provider_id == MonitoringProvider.id)
+    )
+
+    # Filters
+    if date_from:
+        stmt = stmt.where(EventRuleHit.created_at >= date_from)
+    if date_to:
+        stmt = stmt.where(EventRuleHit.created_at <= date_to)
+    if provider:
+        stmt = stmt.where(MonitoringProvider.code == provider)
+    if site_code:
+        stmt = stmt.where(Event.site_code == site_code)
+
+    # Total count
+    count_stmt = select(func.count()).select_from(stmt.subquery())
+    total_res = await db.execute(count_stmt)
+    total = total_res.scalar() or 0
+
+    # Sorting
+    order_col = getattr(EventRuleHit, sort_by, EventRuleHit.created_at)
+    if sort_order == "desc":
+        stmt = stmt.order_by(desc(order_col))
+    else:
+        stmt = stmt.order_by(asc(order_col))
+
+    # Pagination
+    stmt = stmt.offset(skip).limit(limit)
+    
+    result = await db.execute(stmt)
+    items = result.all()
+
+    return {
+        "items": items,
+        "total": total,
+        "page": page,
+        "limit": limit
+    }
 
 @router.get("/active", response_model=List[Any]) # Use Any or AlertOut if imported
 async def get_active_alerts(

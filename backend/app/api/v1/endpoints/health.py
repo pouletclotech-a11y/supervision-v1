@@ -8,7 +8,6 @@ from pydantic import BaseModel
 
 router = APIRouter()
 
-
 class IngestionHealthRow(BaseModel):
     provider_id: int
     provider_label: str
@@ -18,6 +17,8 @@ class IngestionHealthRow(BaseModel):
     total_xls: int
     total_pdf: int
     total_events: int
+    integrity_numerator: int
+    integrity_denominator: int
     avg_integrity: float
     missing_pdf: int
     health_status: str  # OK, WARNING, CRITICAL
@@ -80,12 +81,12 @@ async def get_ingestion_summary(
 
         if expected == 0:
             receipt_status = "OK"   # monitoring désactivé => pas d'alerte
-        elif received >= expected:
-            receipt_status = "OK"
-        elif received >= expected * 0.5:
-            receipt_status = "WARNING"
+        elif received == expected:
+            receipt_status = "OK"    # VERT
+        elif received < expected:
+            receipt_status = "CRITICAL" # ROUGE
         else:
-            receipt_status = "CRITICAL"
+            receipt_status = "WARNING"  # ORANGE (over-receiving)
 
         daily_receipt.append({
             "provider_id": row["provider_id"],

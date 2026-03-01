@@ -8,7 +8,7 @@ import {
     CircularProgress, Alert, Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
     Tabs, Tab, List, ListItem, ListItemText, ListItemSecondaryAction, Divider
 } from '@mui/material';
-import { Edit3, RefreshCw, Zap, Mail, Activity, Clock, Shield, Plus, X, Globe, UserCheck } from 'lucide-react';
+import { Edit3, RefreshCw, Zap, Mail, Activity, Clock, Shield, Plus, X, Globe, UserCheck, Archive, Eye, EyeOff, ArchiveRestore } from 'lucide-react';
 import Layout from '../../../components/Layout';
 import { fetchWithAuth } from '@/lib/api';
 
@@ -47,6 +47,7 @@ export default function ProvidersPage() {
     const [providerRules, setProviderRules] = useState<SmtpRule[]>([]);
     const [tabIndex, setTabIndex] = useState(0);
     const [saveLoading, setSaveLoading] = useState(false);
+    const [showArchived, setShowArchived] = useState(false);
 
     // Form states for adding rules/formats
     const [newRuleValue, setNewRuleValue] = useState('');
@@ -185,6 +186,21 @@ export default function ProvidersPage() {
         setNewFormat('');
     };
 
+    const handleArchiveToggle = async (provider: Provider) => {
+        try {
+            const res = await fetchWithAuth(`/admin/providers/${provider.id}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ is_active: !provider.is_active })
+            });
+            if (res.ok) {
+                await loadProviders();
+            }
+        } catch (err) { alert("Action échouée"); }
+    };
+
+    const displayProviders = providers.filter(p => showArchived || p.is_active);
+
     return (
         <Layout>
             <Box sx={{ p: 4 }}>
@@ -198,6 +214,11 @@ export default function ProvidersPage() {
                         </Typography>
                     </Box>
                     <Box sx={{ display: 'flex', gap: 2 }}>
+                        <FormControlLabel
+                            control={<Switch size="small" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} />}
+                            label={<Typography variant="caption">Afficher archivés</Typography>}
+                            sx={{ mr: 2 }}
+                        />
                         <Button
                             variant="contained"
                             color="success"
@@ -234,8 +255,8 @@ export default function ProvidersPage() {
                                 </TableRow>
                             </TableHead>
                             <TableBody>
-                                {providers.map((p) => (
-                                    <TableRow key={p.id} hover>
+                                {displayProviders.map((p) => (
+                                    <TableRow key={p.id} hover sx={{ opacity: p.is_active ? 1 : 0.6, bgcolor: p.is_active ? 'inherit' : 'action.hover' }}>
                                         <TableCell>
                                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                                                 <Box sx={{ width: 12, height: 12, borderRadius: '50%', bgcolor: p.ui_color || '#ccc' }} />
@@ -264,6 +285,9 @@ export default function ProvidersPage() {
                                             {p.last_successful_import_at ? new Date(p.last_successful_import_at).toLocaleString('fr-FR') : '—'}
                                         </TableCell>
                                         <TableCell align="right">
+                                            <IconButton onClick={() => handleArchiveToggle(p)} size="small" color={p.is_active ? "default" : "warning"} title={p.is_active ? "Archiver" : "Restaurer"}>
+                                                {p.is_active ? <Archive size={18} /> : <ArchiveRestore size={18} />}
+                                            </IconButton>
                                             <IconButton onClick={() => handleEdit(p)} size="small" color="primary">
                                                 <Edit3 size={18} />
                                             </IconButton>

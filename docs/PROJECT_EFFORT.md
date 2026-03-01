@@ -206,3 +206,16 @@ Les estimations basées sur la complexité technique et le volume de code produi
 | Fix REPLAY_REQUESTED orphelins (249 → 51 SUCCESS + 222 ERROR) | 2h | ✅ SQL idempotent avec TRANSACTION |
 | Git commits séparés + push master | 1h | ✅ 3 commits sur master |
 | **Total Roadmap 10** | **22h** | **✅ LIVRÉ** |
+
+### Phase 3 : UX Enhancements (Operational)
+| Tâche | Description / Sous-composants | Estimation (h) | Réel (h) | Statut |
+| :--- | :--- | :---: | :---: | :---: |
+| **Backend API** | /alerts, /events/{id}, /connections/lookup, /client-site/summary | 6 | 5.5 | ✅ |
+| **Indices SQL** | Création index performance + Benchmarking (Explain Analyze) | 1 | 1 | ✅ |
+| **UI: Alert Drilldown** | AlertsListPanel + EventDetailDrawer (Clickable rows) | 4 | 4.5 | ✅ |
+| **UI: Client Dash** | Page /client/[site_code] (Aggregates + Timelines) | 5 | 5 | ✅ |
+| **UI: Global Search** | Header search field + redirection + validation | 2 | 1.5 | ✅ |
+| **UI: Replay Pilot** | Date range selector in Rules page (Replace mode) | 3 | 2.5 | ✅ |
+| **Documentation** | Walkthrough, operation guide, metrics | 2 | 2 | ✅ |
+
+**Total Phase 3** : 23h (Est.) / 22h (Réel)
