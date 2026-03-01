@@ -464,3 +464,42 @@ COMMIT;
 ```
 
 **Résultat** : 32 → SUCCESS, 217 → ERROR. Total final : 51 SUCCESS, 222 ERROR.
+
+---
+
+## 9. Phase 2A Hotfix — Safe Replay & Hardening
+
+### Safe Replay (Atomic REPLACE)
+Le moteur de rejeu (`replay-all`) a été sécurisé pour éviter toute suppression globale destructive.
+
+#### Modes de rejeu
+- **REPLACE (Défaut)** : Supprime et recalcule les hits uniquement pour les événements traités dans le lot actuel. Aucune interruption globale du service.
+- **FULL** : Vide l'ensemble de la table `event_rule_hits` avant de recalculer.
+  - **Sécurité** : Nécessite le flag DB `monitoring.rules.replay_allow_full_clear` à `true` ET le paramètre API `force=true`.
+
+#### Scope temporel
+Le rejeu peut être restreint à une plage de dates (basée sur `Event.created_at`) :
+```bash
+# Exemple via curl (REPLACE par défaut sur une plage)
+curl -X POST http://localhost:8000/api/v1/rules/replay-all \
+     -H "Content-Type: application/json" \
+     -d '{"date_from": "2026-03-01T00:00:00", "mode": "REPLACE"}'
+```
+
+### Robustesse des Settings
+Les overrides via la table `settings` sont désormais typés et validés :
+- Si une valeur JSON est invalide ou d'un type incorrect (ex: string au lieu de bool), le système logue un `WARNING` et utilise la valeur par défaut du `config.yml`.
+- **Logs à surveiller** : `[SETTINGS_OVERRIDE_INVALID_JSON]`, `[SETTINGS_OVERRIDE_TYPE_MISMATCH]`.
+
+### Sécurité Rule ID (ENGINE_V1)
+Le fallback vers `ID=1` a été supprimé. Le système exige l'existence de la règle système nommée `ENGINE_V1`.
+- Si manquante : le worker lève une `RuntimeError` et logue en `CRITICAL`.
+- **Vérification SQL** :
+  ```sql
+  SELECT id, name, condition_type FROM alert_rules WHERE name='ENGINE_V1';
+  ```
+
+### Feature Flag Engine V1
+Il est possible de désactiver le moteur V1 (legacy) tout en gardant le moteur V2 (DB) actif :
+- Setting : `monitoring.rules.engine_v1_enabled` (`true`/`false`).
+- Log : `[ENGINE_V1] enabled=false`.

@@ -3,8 +3,8 @@
 Ce document recense les heures investies dans la conception, le développement et la sécurisation de la plateforme **Supervision-V1**.
 
 ## Résumé
-- **Dernière mise à jour** : 2026-02-28
-- **Total cumulé** : 277 heures
+- **Dernière mise à jour** : 2026-03-01
+- **Total cumulé** : 281 heures
 
 ---
 
@@ -19,11 +19,21 @@ Ce document recense les heures investies dans la conception, le développement e
 | **Phase C (Inspector)** | API Ingestion Logs + UI Data Inspector (Headers extraction, Skeleton gen). | 15h | Terminé |
 | **Phase D (Validation & Close-out)** | Guardrails IMAP per-item + fail-soft COPY/STORE, durcissement BookmarkProtection, tests idempotence. | 10h | **TERMINÉ** |
 | **Phase E (Observability Minimale)** | poll_run_id UUID, métriques METRIC structurées, timings poll_cycle_done, poll_cycle_error. | 7h | **TERMINÉ** |
+| **Phase 2A Hotfix** | Safe Replay (Atomic REPLACE), Rule ID safety (ENGINE_V1), Settings Robustness & Typing. | 4h | **TERMINÉ** |
 | **Refactors & Debug** | Refonte UI, corrections de schémas DB, optimisation des requêtes, gestion des erreurs. | 25h | Continu |
 
 ---
 
 ## 2. Historique des Ajouts
+
+### 2026-03-01 — Phase 2A Hotfix — Safe Replay & Hardening [+4h]
+- **Replay Safety** : Remplacement du DELETE global par un mode `REPLACE` atomique par tranche d'événements. Scope basé sur `Event.created_at`.
+- **FULL mode** : Sécurisé par flag `replay_allow_full_clear` + paramètre `force=true`.
+- **ENGINE_V1** : Migration idempotente (condition_type='SYSTEM'). Suppression du fallback ID=1 (RuntimeError si manquant).
+- **Settings Typing** : Validation JSON + Types (bool, enum) dans `_get_db_setting`. Logs `WARNING` explicites.
+- **API** : Enrichissement de `POST /api/v1/rules/replay-all` (date_from, date_to, mode, force).
+- **Validation** : Test de rejeu sur 83 735 événements (Succès).
+- **Sauvegarde** : `backup_hotfix_phase2a.sql` (SHA256: 95CEB6B8...).
 
 ### 2026-02-28 — Roadmap 11 — Error Root Cause & Ingestion Fixes [+8h]
 - **Diagnostic** : Résolution des causes racines des 222 imports en erreur (FK `rule_id=0`, Pydantic validation).

@@ -16,6 +16,8 @@ monitoring:
     raw_code_mode: "IN"       # EXACT | IN
     RULE_MONITORING_HIGH_THRESHOLD: 100
     RULE_MONITORING_LOW_THRESHOLD: 1
+    replay_allow_full_clear: false
+    engine_v1_enabled: true
   replay:
     default_full_history: true
   ui:

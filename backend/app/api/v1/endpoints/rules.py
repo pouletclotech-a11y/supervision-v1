@@ -97,24 +97,39 @@ async def list_active_rules(
     return list(result.scalars().all())
 
 
+class ReplayRequest(BaseModel):
+    date_from: Optional[datetime] = None
+    date_to: Optional[datetime] = None
+    mode: str = "REPLACE" # "REPLACE" or "FULL"
+    force: bool = False
+
+
 @router.post("/replay-all", response_model=ReplayResult)
 async def replay_all_rules(
+    req: ReplayRequest,
     db: AsyncSession = Depends(get_db)
 ) -> Any:
     """
-    Phase 2A: Replay all business rules on all persisted events.
-
-    Steps:
-      1. Count current event_rule_hits (proof BEFORE)
-      2. Delete all event_rule_hits
-      3. Re-evaluate all active rules on all events (batched)
-      4. Return stats (proof AFTER)
-
-    WARNING: This is a heavy operation. Do not run in production during ingestion.
+    Phase 2A Hotfix: Replay business rules safely.
+    - Mode REPLACE (default): Atomic per batch.
+    - Mode FULL: Requires setting replay_allow_full_clear=True AND force=True.
     """
     from app.services.business_rules import replay_all_rules as _replay
+    
+    if req.mode.upper() == "FULL" and not req.force:
+        raise HTTPException(
+            status_code=400, 
+            detail="FULL mode requires force=true and specific DB setting enabled."
+        )
+
     try:
-        stats = await _replay(db)
+        stats = await _replay(
+            db, 
+            date_from=req.date_from, 
+            date_to=req.date_to, 
+            mode=req.mode, 
+            force_full=req.force
+        )
         return ReplayResult(
             status="OK",
             events_processed=stats["events_processed"],
@@ -122,5 +137,8 @@ async def replay_all_rules(
             hits_after=stats["hits_after"],
             delta=stats["delta"],
         )
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
     except Exception as e:
+        logger.error(f"[API_REPLAY_ERROR] {str(e)}")
         raise HTTPException(status_code=500, detail=f"Replay failed: {str(e)}")
