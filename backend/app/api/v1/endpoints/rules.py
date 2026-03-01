@@ -8,6 +8,7 @@ from app.db.models import AlertRule
 from app.services.repository import EventRepository
 from pydantic import BaseModel
 from app.core.config import settings
+from app.schemas.response_models import ReplayResult
 
 router = APIRouter()
 

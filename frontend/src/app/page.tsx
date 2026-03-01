@@ -40,7 +40,7 @@ export default function DashboardPage() {
                         </Typography>
                     </Box>
                     <Box sx={{ display: 'flex', gap: 1 }}>
-                        <Chip label="v1.0.2-beta" size="small" variant="outlined" sx={{ borderColor: 'divider' }} />
+                        <Chip label="v12.0.0" size="small" variant="outlined" sx={{ borderColor: 'divider' }} />
                         <Chip icon={<Activity size={14} />} label="Healthy" color="success" size="small" />
                     </Box>
                 </Box>

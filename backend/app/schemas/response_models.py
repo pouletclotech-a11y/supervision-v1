@@ -215,3 +215,10 @@ class ClientSiteSummaryOut(BaseModel):
     provider_name: Optional[str] = None
     kpis: dict # events_count, alerts_count, last_event_at, last_alert_at, top_rules: List[SiteTopRule]
     timeline: dict # {"events": EventListOut, "alerts": AlertListResponse}
+class ReplayResult(BaseModel):
+    status: str
+    mode: str
+    events_processed: int
+    hits_before: int
+    hits_after: int
+    delta: int
