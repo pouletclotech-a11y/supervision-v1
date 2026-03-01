@@ -23,7 +23,7 @@ class ExcelParser(BaseParser):
     """
 
     def supported_extensions(self) -> List[str]:
-        return ['.xls']
+        return ['.xls', '.xlsx']
 
     def _normalize_site_code(self, code: str) -> str:
         return normalize_site_code(code)
@@ -40,22 +40,29 @@ class ExcelParser(BaseParser):
             pass
 
         if is_binary:
+            import logging
+            logging.getLogger("excel-parser").info(f" [XLSX_PARSE_START] {file_path}")
             return self._parse_real_excel(file_path, source_timezone, parser_config)
         else:
+            import logging
+            logging.getLogger("excel-parser").info(f" [XLS_PARSE_START] {file_path}")
             return self._parse_tsv_excel(file_path, source_timezone, parser_config)
 
     def _parse_real_excel(self, file_path: str, source_timezone: str = "UTC", parser_config: dict = None) -> List[NormalizedEvent]:
         import pandas as pd
+        import logging
+        logger = logging.getLogger("excel-parser")
         events = []
         try:
+            # Explicitly use openpyxl for .xlsx
             df = pd.read_excel(file_path, header=None, engine='openpyxl')
+            logger.info(f" [XLSX_ROWS_DETECTED] count={len(df)}")
             
             # Detect format (Condition 6 - Zéro Hardcode)
             is_histo = False
             if parser_config and parser_config.get("format") == "HISTO":
                 is_histo = True
             elif not df.empty and str(df.iloc[0, 0]).strip().upper() == 'YPSILON_HISTO':
-                # Legacy fallback
                 is_histo = True
                 
             # Context trackers (Inheritance)
@@ -63,46 +70,60 @@ class ExcelParser(BaseParser):
             ctx_site_code_raw = None
             ctx_client_name = None
             ctx_day = None
-            ctx_date = None # Last seen full date
+            ctx_date = None
 
             for idx, row_series in df.iterrows():
-                # Keep raw values for better type detection (like Timestamp)
-                row = row_series.tolist()
+                # PD specific: convert all values to strings for unified processing, 
+                # but keep nulls as empty strings.
+                # Handle potential float conversion of site codes (69000.0)
+                row = []
+                for val in row_series.tolist():
+                    if val is None or (isinstance(val, float) and pd.isna(val)):
+                        row.append("")
+                    else:
+                        row.append(val) # Keep as objects, _process_row will handle conversion
+
                 row_idx = idx + 1
-                
-                # Replace None or NaN with empty string
-                row = ["" if c is None or (isinstance(c, float) and pd.isna(c)) else c for c in row]
                 
                 # Pad to at least 15 columns for HISTO
                 while len(row) < 15:
                     row.append("")
                 
-                processed = self._process_row(row, row_idx, file_path, ctx_site_code, ctx_site_code_raw, ctx_client_name, ctx_day, ctx_date, is_histo, source_timezone)
-                if processed:
-                    evt, ctx_site_code, ctx_site_code_raw, ctx_client_name, ctx_day, ctx_date = processed
-                    if evt:
-                        events.append(evt)
+                try:
+                    processed = self._process_row(row, row_idx, file_path, ctx_site_code, ctx_site_code_raw, ctx_client_name, ctx_day, ctx_date, is_histo, source_timezone)
+                    if processed:
+                        evt, ctx_site_code, ctx_site_code_raw, ctx_client_name, ctx_day, ctx_date = processed
+                        if evt:
+                            events.append(evt)
+                except Exception as row_err:
+                    logger.error(f" [XLSX_ROW_ERROR] row={row_idx} file={file_path}: {row_err}")
+            
+            logger.info(f" [XLSX_EVENTS_CREATED] count={len(events)}")
             
         except Exception as e:
-            import logging
-            logging.getLogger("excel-parser").error(f"Failed to parse binary excel {file_path}: {e}")
+            logger.error(f" [XLSX_FATAL_ERROR] file={file_path}: {e}")
             raise e
             
         return events
 
     def _parse_tsv_excel(self, file_path: str, source_timezone: str = "UTC", parser_config: dict = None) -> List[NormalizedEvent]:
+        import logging
+        logger = logging.getLogger("excel-parser")
         events = []
         # Context trackers (Inheritance)
         ctx_site_code = None
         ctx_site_code_raw = None
         ctx_client_name = None
         ctx_day = None
-        ctx_date = None # Last seen full date
+        ctx_date = None
 
         with open(file_path, 'r', encoding='latin-1', errors='replace') as f:
             reader = csv.reader(f, delimiter='\t')
+            rows = list(reader)
+            logger.info(f" [XLS_ROWS_DETECTED] count={len(rows)}")
+            
             row_idx = 0
-            for row in reader:
+            for row in rows:
                 row_idx += 1
                 if not row: continue
                 # Clean row elements
@@ -111,11 +132,16 @@ class ExcelParser(BaseParser):
                 while len(clean_row) < 6:
                     clean_row.append("")
                 
-                processed = self._process_row(clean_row, row_idx, file_path, ctx_site_code, ctx_site_code_raw, ctx_client_name, ctx_day, ctx_date, False, source_timezone)
-                if processed:
-                    evt, ctx_site_code, ctx_site_code_raw, ctx_client_name, ctx_day, ctx_date = processed
-                    if evt:
-                        events.append(evt)
+                try:
+                    processed = self._process_row(clean_row, row_idx, file_path, ctx_site_code, ctx_site_code_raw, ctx_client_name, ctx_day, ctx_date, False, source_timezone)
+                    if processed:
+                        evt, ctx_site_code, ctx_site_code_raw, ctx_client_name, ctx_day, ctx_date = processed
+                        if evt:
+                            events.append(evt)
+                except Exception as row_err:
+                    logger.error(f" [XLS_ROW_ERROR] row={row_idx} file={file_path}: {row_err}")
+            
+            logger.info(f" [XLS_EVENTS_CREATED] count={len(events)}")
         return events
 
     def _process_row(self, clean_row, row_idx, file_path, ctx_site_code, ctx_site_code_raw, ctx_client_name, ctx_day, ctx_date, is_histo=False, source_timezone="UTC"):
@@ -126,35 +152,49 @@ class ExcelParser(BaseParser):
 
         # --- 1. SITE_CODE PROPAGATION (Col A) ---
         if col_a:
+            # Robust conversion: handle pandas floats (69000.0)
             col_a_clean = str(col_a).strip()
+            if col_a_clean.endswith('.0'):
+                col_a_clean = col_a_clean[:-2]
+            
             # Match digits-only or C-digits, but keep original if it looks like a code
             site_match = re.match(r'^(C-)?(\d+)$', col_a_clean)
             if site_match:
                 ctx_site_code, ctx_site_code_raw = normalize_site_code_full(col_a_clean)
                 # Client name is usually in Col B of the header row
-                if col_b and str(col_b).upper()[:3] not in ["LUN", "MAR", "MER", "JEU", "VEN", "SAM", "DIM"]:
-                    ctx_client_name = str(col_b).strip()
+                if col_b:
+                    col_b_str = str(col_b).strip().upper()
+                    if col_b_str[:3] not in ["LUN", "MAR", "MER", "JEU", "VEN", "SAM", "DIM"] and col_b_str != "NAN":
+                        ctx_client_name = str(col_b).strip()
 
         # --- 2. DAY PROPAGATION (Col B) ---
         days_map = ["LUN", "MAR", "MER", "JEU", "VEN", "SAM", "DIM"]
-        if col_b and str(col_b).upper()[:3] in days_map:
-            ctx_day = str(col_b).upper()[:3]
+        if col_b:
+            col_b_str = str(col_b).strip().upper()
+            if col_b_str[:3] in days_map:
+                ctx_day = col_b_str[:3]
 
         # --- 3. DATE/TIME PROPAGATION (Col C) ---
         ts = None
         if col_c:
-            # Case A: Full Date 27/01/2026 16:24:25
-            try:
-                ts = datetime.strptime(str(col_c), "%d/%m/%Y %H:%M:%S")
+            # Support already parsed datetime/Timestamp from Pandas
+            if isinstance(col_c, datetime):
+                ts = col_c
                 ctx_date = ts.date()
-            except ValueError:
-                # Case B: Time only 16:24:25
-                if re.match(r'^\d{2}:\d{2}:\d{2}$', str(col_c)) and ctx_date:
-                    try:
-                        t_part = datetime.strptime(str(col_c), "%H:%M:%S").time()
-                        ts = datetime.combine(ctx_date, t_part)
-                    except ValueError:
-                        pass
+            else:
+                col_c_str = str(col_c).strip()
+                # Case A: Full Date 27/01/2026 16:24:25
+                try:
+                    ts = datetime.strptime(col_c_str, "%d/%m/%Y %H:%M:%S")
+                    ctx_date = ts.date()
+                except ValueError:
+                    # Case B: Time only 16:24:25
+                    if re.match(r'^\d{2}:\d{2}:\d{2}$', col_c_str) and ctx_date:
+                        try:
+                            t_part = datetime.strptime(col_c_str, "%H:%M:%S").time()
+                            ts = datetime.combine(ctx_date, t_part)
+                        except ValueError:
+                            pass
         
         # --- 4. ACTION & DETAILS (Col D & F) ---
         action = str(col_d).strip()
