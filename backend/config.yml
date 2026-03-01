@@ -18,6 +18,11 @@ monitoring:
     RULE_MONITORING_LOW_THRESHOLD: 1
     replay_allow_full_clear: false
     engine_v1_enabled: true
+    scoring_enabled: false
+    score_threshold_default: 0.7
+    score_default_weight: 1.0
+    score_normalization: 1.0
+    scoring_record_below_threshold: false
   replay:
     default_full_history: true
   ui:

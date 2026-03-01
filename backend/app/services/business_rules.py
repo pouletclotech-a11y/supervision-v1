@@ -218,16 +218,85 @@ class BusinessRuleEngine:
         active_rules: List[AlertRule],
         raw_code_mode: str
     ):
-        """Évalue les AlertRule actives avec matching raw_code."""
+        """Évalue les AlertRule actives avec matching raw_code et scoring optionnel."""
+        cfg = await self._rules_config()
+        
+        # 1. Résolution des paramètres globaux
+        global_scoring_enabled = await _get_db_setting(self.session, 'monitoring.rules.scoring_enabled', cfg.get('scoring_enabled', False), expected_type=bool)
+        global_threshold = await _get_db_setting(self.session, 'monitoring.rules.score_threshold_default', cfg.get('score_threshold_default', 0.7), expected_type=(float, int))
+        global_weight = await _get_db_setting(self.session, 'monitoring.rules.score_default_weight', cfg.get('score_default_weight', 1.0), expected_type=(float, int))
+        normalization = await _get_db_setting(self.session, 'monitoring.rules.score_normalization', cfg.get('score_normalization', 1.0), expected_type=(float, int))
+        record_below = await _get_db_setting(self.session, 'monitoring.rules.scoring_record_below_threshold', cfg.get('scoring_record_below_threshold', False), expected_type=bool)
+
+        if normalization <= 0:
+            logger.warning(f"[SCORING_INVALID_NORMALIZATION] normalization={normalization} <= 0. Falling back to 1.0")
+            normalization = 1.0
+
         for rule in active_rules:
             matched = self._evaluate_single_db_rule(event, rule, raw_code_mode)
-            if matched:
-                await self._record_hit(
-                    event,
-                    rule.name,
-                    f"[V2] raw_code match (mode={raw_code_mode})",
-                    rule_id_override=rule.id
-                )
+            if not matched:
+                continue
+
+            # 2. Résolution des paramètres par règle (Overrides)
+            rule_logic = rule.logic_tree if isinstance(rule.logic_tree, dict) else {}
+            
+            # enabled
+            setting_scoring_enabled = global_scoring_enabled
+            if 'scoring_enabled' in rule_logic:
+                val = rule_logic['scoring_enabled']
+                if isinstance(val, bool):
+                    setting_scoring_enabled = val
+                else:
+                    logger.warning(f"[SCORING_INVALID_OVERRIDE] rule_id={rule.id} key=scoring_enabled value={val} (expected bool)")
+
+            # weight
+            rule_weight = global_weight
+            if 'weight' in rule_logic:
+                val = rule_logic['weight']
+                if isinstance(val, (int, float)) and val >= 0:
+                    rule_weight = float(val)
+                else:
+                    logger.warning(f"[SCORING_INVALID_OVERRIDE] rule_id={rule.id} key=weight value={val} (expected float >= 0)")
+
+            # threshold
+            rule_threshold = global_threshold
+            if 'score_threshold' in rule_logic:
+                val = rule_logic['score_threshold']
+                if isinstance(val, (int, float)) and 0 <= val <= 1:
+                    rule_threshold = float(val)
+                else:
+                    logger.warning(f"[SCORING_INVALID_OVERRIDE] rule_id={rule.id} key=score_threshold value={val} (expected float 0..1)")
+
+            # 3. Calcul du score
+            final_score = None
+            if setting_scoring_enabled:
+                final_score = float(rule_weight) / float(normalization)
+                
+                # 4. Filtrage par seuil
+                if final_score < rule_threshold:
+                    if not record_below:
+                        logger.info(f"[SCORING_SKIPPED] rule_id={rule.id} event_id={event.id} score={final_score:.2f} threshold={rule_threshold:.2f}")
+                        continue
+                    else:
+                        # On enregistre mais avec un flag below_threshold
+                        await self._record_hit(
+                            event,
+                            rule.name,
+                            f"[SCORING_BELOW_THRESHOLD] score={final_score:.2f} < {rule_threshold:.2f}",
+                            rule_id_override=rule.id,
+                            score=final_score,
+                            hit_metadata_override={"below_threshold": True}
+                        )
+                        continue
+
+            # 5. Enregistrement normal (score=None si !scoring_enabled)
+            await self._record_hit(
+                event,
+                rule.name,
+                f"[V2] match (scoring={'on' if setting_scoring_enabled else 'off'})",
+                rule_id_override=rule.id,
+                score=final_score
+            )
 
     def _evaluate_single_db_rule(
         self,
@@ -285,7 +354,9 @@ class BusinessRuleEngine:
         event: Event,
         rule_code: str,
         explanation: str,
-        rule_id_override: Optional[int] = None
+        rule_id_override: Optional[int] = None,
+        score: Optional[float] = None,
+        hit_metadata_override: Optional[dict] = None
     ):
         """Enregistre un hit, en évitant les doublons (unique index event_id+rule_id)."""
         rule_id = rule_id_override or await self._resolve_system_rule_id()
@@ -300,11 +371,16 @@ class BusinessRuleEngine:
         if existing.scalar():
             return  # déjà enregistré
 
+        metadata = {"explanation": explanation}
+        if hit_metadata_override:
+            metadata.update(hit_metadata_override)
+
         hit = EventRuleHit(
             event_id=event.id,
             rule_id=rule_id,
             rule_name=rule_code,
-            hit_metadata={"explanation": explanation}
+            score=score,
+            hit_metadata=metadata
         )
         self.session.add(hit)
         logger.info(f"[RULE_HIT] {rule_code} (rule_id={rule_id}) event={event.id}")

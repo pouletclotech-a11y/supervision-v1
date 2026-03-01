@@ -4,7 +4,7 @@ Ce document recense les heures investies dans la conception, le développement e
 
 ## Résumé
 - **Dernière mise à jour** : 2026-03-01
-- **Total cumulé** : 281 heures
+- **Total cumulé** : 287 heures
 
 ---
 
@@ -20,11 +20,20 @@ Ce document recense les heures investies dans la conception, le développement e
 | **Phase D (Validation & Close-out)** | Guardrails IMAP per-item + fail-soft COPY/STORE, durcissement BookmarkProtection, tests idempotence. | 10h | **TERMINÉ** |
 | **Phase E (Observability Minimale)** | poll_run_id UUID, métriques METRIC structurées, timings poll_cycle_done, poll_cycle_error. | 7h | **TERMINÉ** |
 | **Phase 2A Hotfix** | Safe Replay (Atomic REPLACE), Rule ID safety (ENGINE_V1), Settings Robustness & Typing. | 4h | **TERMINÉ** |
+| **Phase 2B Scoring** | Optional scoring behind flag, score column, per-rule overrides, audit mode (below_threshold). | 6h | **TERMINÉ** |
 | **Refactors & Debug** | Refonte UI, corrections de schémas DB, optimisation des requêtes, gestion des erreurs. | 25h | Continu |
 
 ---
 
 ## 2. Historique des Ajouts
+
+### 2026-03-01 — Phase 2B Scoring — Optional Scoring behind Flag [+6h]
+- **DB** : Ajout colonne `score` (FLOAT, nullable) dans `event_rule_hits`.
+- **Moteur Scoring** : Calcul `score = weight / normalization`. Overrides via `logic_tree` (weight, threshold, enabled).
+- **Filtrage** : Suppression du bruit (hit ignoré si `score < threshold`).
+- **Audit Mode** : Enregistrement des hits sous le seuil via `scoring_record_below_threshold: true`.
+- **Validation** : Test de non-régression (COUNT identique quand OFF) et tests de calibration sur 83k événements.
+- **Commit** : `feat(v12): phase 2B - optional scoring behind flag`.
 
 ### 2026-03-01 — Phase 2A Hotfix — Safe Replay & Hardening [+4h]
 - **Replay Safety** : Remplacement du DELETE global par un mode `REPLACE` atomique par tranche d'événements. Scope basé sur `Event.created_at`.

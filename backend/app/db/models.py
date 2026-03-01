@@ -218,6 +218,7 @@ class EventRuleHit(Base):
     event_id: Mapped[int] = mapped_column(BigInteger, index=True)
     rule_id: Mapped[int] = mapped_column(ForeignKey("alert_rules.id", ondelete="CASCADE"), index=True)
     rule_name: Mapped[str] = mapped_column(String(100))
+    score: Mapped[Optional[float]] = mapped_column(Float)
     hit_metadata: Mapped[Optional[dict]] = mapped_column(JSONB)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

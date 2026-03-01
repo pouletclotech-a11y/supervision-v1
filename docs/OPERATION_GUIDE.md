@@ -503,3 +503,44 @@ Le fallback vers `ID=1` a été supprimé. Le système exige l'existence de la r
 Il est possible de désactiver le moteur V1 (legacy) tout en gardant le moteur V2 (DB) actif :
 - Setting : `monitoring.rules.engine_v1_enabled` (`true`/`false`).
 - Log : `[ENGINE_V1] enabled=false`.
+
+---
+
+## 10. Phase 2B — Scoring (V2)
+
+### Scoring Engine
+Le moteur de scoring permet de pondérer les hits des règles V2 et de filtrer le bruit.
+
+#### Paramètres globaux (config.yml)
+- `scoring_enabled`: `false` (par défaut). Si `false`, tous les hits sont enregistrés avec `score=NULL`.
+- `score_threshold_default`: `0.7` (seuil pour enregistrer un hit).
+- `score_default_weight`: `1.0` (poids par défaut si non spécifié par la règle).
+- `score_normalization`: `1.0` (facteur de normalisation).
+- `scoring_record_below_threshold`: `false`. Si `true` (Mode Audit), les hits sous le seuil sont enregistrés avec un flag.
+
+#### Overrides par règle (logic_tree)
+Chaque règle peut overrider les paramètres globaux dans son champ `logic_tree` :
+- `"weight"`: `float` (ex: `1.5` pour une règle critique).
+- `"score_threshold"`: `float` between `0..1`.
+- `"scoring_enabled"`: `bool`.
+
+#### Mode Audit (Calibration)
+Pour calibrer les seuils sans perdre de données :
+1. Régler `monitoring.rules.scoring_enabled` à `true`.
+2. Régler `monitoring.rules.scoring_record_below_threshold` à `true`.
+3. Analyser les hits en DB :
+   ```sql
+   SELECT rule_name, score, hit_metadata->'below_threshold' as below 
+   FROM event_rule_hits 
+   WHERE score IS NOT NULL;
+   ```
+
+#### Sécurité & Robustesse
+- **Priorité**: Rule Override > DB settings > YAML defaults.
+- **Validation**:
+  - `weight` doit être `>= 0`.
+  - `score_threshold` doit être entre `0` et `1`.
+  - `normalization` doit être `> 0` (fallback `1.0` sinon).
+- **Logs**:
+  - `[SCORING_SKIPPED]`: Hit ignoré car score < seuil.
+  - `[SCORING_INVALID_OVERRIDE]`: Override ignoré car type ou valeur invalide.
