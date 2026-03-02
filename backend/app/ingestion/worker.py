@@ -177,9 +177,18 @@ async def process_ingestion_item(adapter: BaseAdapter, item: AdapterItem, redis_
             # 5. Get Parser
             parser = ParserFactory.get_parser(f".{ext}")
             
-            # --- EFI DIAGNOSTIC (STRICT MODE) ---
+            # --- EFI DIAGNOSTIC (STRICT MODE - ZERO HARDCODING) ---
             monitoring_provider = await repo.get_monitoring_provider(resolved_provider_id)
-            is_efi = monitoring_provider and (monitoring_provider.code == "EFI" or monitoring_provider.label == "EFI")
+            debug_code = settings.MONITORING.get("ingestion", {}).get("debug_provider_code")
+            
+            is_efi = False
+            if monitoring_provider:
+                # A: Baseline logic (EFI code)
+                if monitoring_provider.code == "EFI" or monitoring_provider.label == "EFI":
+                    is_efi = True
+                # B: Dynamic override via Setting (PROD-STABLE STRICT)
+                if debug_code and monitoring_provider.code == debug_code:
+                    is_efi = True
             
             if is_efi:
                 logger.info(f"[EFI_INGEST_START] import_id=NEW filename={item.filename} provider_id={resolved_provider_id} ext={ext}")

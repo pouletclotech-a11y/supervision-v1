@@ -573,3 +573,20 @@ La gestion des règles permet de relancer un rejeu sur une plage de dates.
 ### Performance (Phase 3)
 Les endpoints de la phase 3 sont optimisés par des index SQL (`ix_events_site_code`, `ix_event_rule_hits_created_at`).
 - **Audit** : Utiliser `EXPLAIN ANALYZE` sur les requêtes complexes de jointure (backend/benchmark_phase3.py).
+
+---
+
+## 12. Procédure de Patch v12.0.1 (Hotfix EFI)
+
+Ce patch corrige l'ingestion des fichiers EFI (YPSILON) qui généraient 0 événements.
+
+### Étapes de mise à jour
+1. **Backup** : Exécuter le dump SQL de sécurité.
+2. **Rebuild** : `docker compose down && docker compose build --no-cache && docker compose up -d`.
+3. **Vérification** : Importer un fichier EFI et vérifier les logs `[EFI_...]`.
+
+### Paramétrage Debug
+Pour activer les logs détaillés EFI sans redémarrage :
+```sql
+UPDATE settings SET value = '"EFI"' WHERE key = 'monitoring.ingestion.debug_provider_code';
+```

@@ -104,7 +104,7 @@ async def init_tables():
 
 @app.get("/health")
 def health_check():
-    return {"status": "ok", "version": "0.1.0"}
+    return {"status": "ok", "version": "12.0.1"}
 
 @app.get("/")
 def root():

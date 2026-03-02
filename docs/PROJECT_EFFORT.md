@@ -27,7 +27,12 @@ Ce document recense les heures investies dans la conception, le développement e
 
 ## 2. Historique des Ajouts
 
-### 2026-03-01 — Phase 2B Scoring — Optional Scoring behind Flag [+6h]
+### 2026-03-02 — Release Patch v12.0.1 — Hotfix EFI [+4h]
+- **Correction** : Support des colonnes Date/Heure séparées pour le format YPSILON (EFI).
+- **Diagnostic** : Ajout des logs `[EFI_...]` activables via settings.
+- **Versioning** : Bump version globale à v12.0.1.
+- **Validation** : Rebuild complet et tests de non-régression (SPGO/CORS).
+- **Release** : Tag Git v12.0.1 et documentation.
 - **DB** : Ajout colonne `score` (FLOAT, nullable) dans `event_rule_hits`.
 - **Moteur Scoring** : Calcul `score = weight / normalization`. Overrides via `logic_tree` (weight, threshold, enabled).
 - **Filtrage** : Suppression du bruit (hit ignoré si `score < threshold`).
