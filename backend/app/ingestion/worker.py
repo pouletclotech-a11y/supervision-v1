@@ -177,6 +177,16 @@ async def process_ingestion_item(adapter: BaseAdapter, item: AdapterItem, redis_
             # 5. Get Parser
             parser = ParserFactory.get_parser(f".{ext}")
             
+            # --- EFI DIAGNOSTIC (STRICT MODE) ---
+            monitoring_provider = await repo.get_monitoring_provider(resolved_provider_id)
+            is_efi = monitoring_provider and (monitoring_provider.code == "EFI" or monitoring_provider.label == "EFI")
+            
+            if is_efi:
+                logger.info(f"[EFI_INGEST_START] import_id=NEW filename={item.filename} provider_id={resolved_provider_id} ext={ext}")
+                logger.info(f"[EFI_ROUTE] selected_parser={parser.__class__.__name__ if parser else 'NONE'} supported_ext={ext}")
+                if file_path.exists():
+                    logger.info(f"[EFI_FILE_EXISTS] size_bytes={item.size_bytes}")
+            
             if not parser:
                 error_msg = f"No parser found for extension .{ext}"
                 import_log = await repo.create_import_log(item.filename, file_hash=item.sha256)
@@ -272,7 +282,8 @@ async def process_ingestion_item(adapter: BaseAdapter, item: AdapterItem, redis_
                 # Pass parser_config (Phase 3 abstraction)
                 parse_result = parser.parse(
                     str(file_path), 
-                    source_timezone=profile.source_timezone
+                    source_timezone=profile.source_timezone,
+                    parser_config={"is_efi": is_efi}
                 )
                 events = parse_result if isinstance(parse_result, list) else []
 

@@ -54,10 +54,25 @@ class ExcelParser(BaseParser):
         logger = logging.getLogger("excel-parser")
         events = []
         try:
+            # EFI Diagnostic
+            is_efi = parser_config.get("is_efi", False) if parser_config else False
+            
             # Explicitly use openpyxl for .xlsx
             df = pd.read_excel(file_path, header=None, engine='openpyxl')
-            logger.info(f" [XLSX_ROWS_DETECTED] count={len(df)}")
             
+            if is_efi:
+                try:
+                    import openpyxl
+                    wb = openpyxl.load_workbook(file_path, read_only=True)
+                    logger.info(f" [EFI_SHEETS] sheets={wb.sheetnames}")
+                except:
+                    pass
+                logger.info(f" [EFI_DF_SHAPE] rows={len(df)} cols={len(df.columns) if not df.empty else 0}")
+                logger.info(f" [EFI_ROWS_DETECTED] count={len(df)}")
+                if not df.empty:
+                    sample = df.head(3).values.tolist()
+                    logger.info(f" [EFI_FIRST_ROWS_SAMPLE] sample_3_rows={sample}")
+
             # Diagnostic Log: Raw sample content
             if not df.empty:
                 sample = df.head(3).to_dict(orient='records')
@@ -95,13 +110,16 @@ class ExcelParser(BaseParser):
                     row.append("")
                 
                 try:
-                    processed = self._process_row(row, row_idx, file_path, ctx_site_code, ctx_site_code_raw, ctx_client_name, ctx_day, ctx_date, is_histo, source_timezone)
+                    processed = self._process_row(row, row_idx, file_path, ctx_site_code, ctx_site_code_raw, ctx_client_name, ctx_day, ctx_date, is_histo, source_timezone, is_efi=is_efi)
                     if processed:
                         evt, ctx_site_code, ctx_site_code_raw, ctx_client_name, ctx_day, ctx_date = processed
                         if evt:
                             events.append(evt)
                 except Exception as row_err:
                     logger.error(f" [XLSX_ROW_ERROR] row={row_idx} file={file_path}: {row_err}")
+            
+            if is_efi:
+                logger.info(f" [EFI_EVENTS_CREATED] count={len(events)}")
             
             logger.info(f" [XLSX_EVENTS_CREATED] count={len(events)}")
             
@@ -122,9 +140,19 @@ class ExcelParser(BaseParser):
         ctx_day = None
         ctx_date = None
 
+        # EFI Diagnostic
+        is_efi = parser_config.get("is_efi", False) if parser_config else False
+        
         with open(file_path, 'r', encoding='latin-1', errors='replace') as f:
             reader = csv.reader(f, delimiter='\t')
             rows = list(reader)
+            
+            if is_efi:
+                logger.info(f" [EFI_DF_SHAPE] rows={len(rows)} cols={len(rows[0]) if rows else 0}")
+                logger.info(f" [EFI_ROWS_DETECTED] count={len(rows)}")
+                if rows:
+                    logger.info(f" [EFI_FIRST_ROWS_SAMPLE] sample_3_rows={rows[:3]}")
+
             logger.info(f" [XLS_ROWS_DETECTED] count={len(rows)}")
             
             row_idx = 0
@@ -138,7 +166,7 @@ class ExcelParser(BaseParser):
                     clean_row.append("")
                 
                 try:
-                    processed = self._process_row(clean_row, row_idx, file_path, ctx_site_code, ctx_site_code_raw, ctx_client_name, ctx_day, ctx_date, False, source_timezone)
+                    processed = self._process_row(clean_row, row_idx, file_path, ctx_site_code, ctx_site_code_raw, ctx_client_name, ctx_day, ctx_date, False, source_timezone, is_efi=is_efi)
                     if processed:
                         evt, ctx_site_code, ctx_site_code_raw, ctx_client_name, ctx_day, ctx_date = processed
                         if evt:
@@ -146,14 +174,22 @@ class ExcelParser(BaseParser):
                 except Exception as row_err:
                     logger.error(f" [XLS_ROW_ERROR] row={row_idx} file={file_path}: {row_err}")
             
+            if is_efi:
+                logger.info(f" [EFI_EVENTS_CREATED] count={len(events)}")
+            
             logger.info(f" [XLS_EVENTS_CREATED] count={len(events)}")
         return events
 
-    def _process_row(self, clean_row, row_idx, file_path, ctx_site_code, ctx_site_code_raw, ctx_client_name, ctx_day, ctx_date, is_histo=False, source_timezone="UTC"):
+    def _process_row(self, clean_row, row_idx, file_path, ctx_site_code, ctx_site_code_raw, ctx_client_name, ctx_day, ctx_date, is_histo=False, source_timezone="UTC", is_efi=False):
         if is_histo:
             return self._process_row_histo(clean_row, row_idx, file_path, ctx_site_code, ctx_site_code_raw, ctx_client_name, ctx_day, ctx_date, source_timezone)
         
-        col_a, col_b, col_c, col_d, col_e, col_f = [clean_excel_value(c) for c in clean_row[:6]]
+        col_a, col_b, col_c, col_d, col_e, col_f, col_g = [clean_excel_value(c) for c in clean_row[:7]]
+
+        # --- EFI DIAGNOSTIC: MAPPING ---
+        if is_efi and row_idx == 1:
+            import logging
+            logging.getLogger("excel-parser").info(f" [EFI_COLUMN_MAP] site_code_col=A day_col=B date_col=C time_col=D code_col=F action_col=G")
 
         # --- 1. SITE_CODE PROPAGATION (Col A) ---
         if col_a:
@@ -179,35 +215,48 @@ class ExcelParser(BaseParser):
             if col_b_str[:3] in days_map:
                 ctx_day = col_b_str[:3]
 
-        # --- 3. DATE/TIME PROPAGATION (Col C) ---
+        # --- 3. DATE/TIME PROPAGATION (Col C & D) ---
         ts = None
-        if col_c:
+        if col_c or col_d:
             # Support already parsed datetime/Timestamp from Pandas
             if isinstance(col_c, datetime):
                 ts = col_c
                 ctx_date = ts.date()
             else:
                 col_c_str = str(col_c).strip()
-                # Case A: Full Date 27/01/2026 16:24:25
+                # Case A: Full Date 27/01/2026 16:24:25 in Col C
                 try:
                     ts = datetime.strptime(col_c_str, "%d/%m/%Y %H:%M:%S")
                     ctx_date = ts.date()
                 except ValueError:
-                    # Case B: Time only 16:24:25
-                    if re.match(r'^\d{2}:\d{2}:\d{2}$', col_c_str) and ctx_date:
-                        try:
-                            t_part = datetime.strptime(col_c_str, "%H:%M:%S").time()
-                            ts = datetime.combine(ctx_date, t_part)
-                        except ValueError:
-                            pass
+                    # Case B: Date in Col C (27/01/2026) and Time in Col D (16:24:25)
+                    try:
+                        temp_date = datetime.strptime(col_c_str, "%d/%m/%Y").date()
+                        ctx_date = temp_date
+                    except ValueError:
+                        pass
+                    
+                    if col_d:
+                        col_d_str = str(col_d).strip()
+                        if re.match(r'^\d{2}:\d{2}:\d{2}$', col_d_str) and ctx_date:
+                            try:
+                                t_part = datetime.strptime(col_d_str, "%H:%M:%S").time()
+                                ts = datetime.combine(ctx_date, t_part)
+                            except ValueError:
+                                pass
         
-        # --- 4. ACTION & DETAILS (Col D & F) ---
-        action = str(col_d).strip()
-        details = str(col_f).strip()
-        raw_code = str(col_e).strip() if col_e and str(col_e).lower() != 'nan' else None
+        # --- 4. ACTION & DETAILS (Col G & F) ---
+        # In YPSILON TSV: Col E is empty/separator, Col F is raw_code, Col G is action/message
+        action = str(col_g).strip()
+        details = "" # Details might be merged in action for this format
+        raw_code = str(col_f).strip() if col_f and str(col_f).lower() != 'nan' else None
 
         # --- 5. EVENT GENERATION ---
         if not ts or not action or not ctx_site_code or action.lower() == 'nan':
+            if is_efi and row_idx <= 20:
+                import logging
+                reason = "MISSING_TS" if not ts else ("MISSING_ACTION" if not action else "MISSING_SITE")
+                logging.getLogger("excel-parser").info(f" [EFI_ROW_SKIPPED] row_index={row_idx} reason={reason} raw_site={col_a} raw_date={col_c} raw_time={col_d} raw_action={col_g}")
             return None, ctx_site_code, ctx_site_code_raw, ctx_client_name, ctx_day, ctx_date
         
         # State mapping
