@@ -65,9 +65,10 @@ class ProfileManager:
                         "parser_config": model.parser_config or {},
                         "extraction_rules": model.extraction_rules or {},
                         "normalization": normalization,
-                        "excel_options": model.excel_options,
-                        "csv_options": model.csv_options,
                         "provider_code": getattr(model, "provider_code", None),
+                        "format_kind": getattr(model, "format_kind", "XLSX_NATIVE"),
+                        "action_config": getattr(model, "action_config", {}),
+                        "filename_regex": getattr(model, "filename_regex", None),
                     }
                     p = IngestionProfile(**profile_data)
                     self.profiles[p.profile_id] = p

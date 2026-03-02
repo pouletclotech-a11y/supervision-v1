@@ -22,7 +22,7 @@ class NormalizedEvent(BaseModel):
     normalized_message: Optional[str] = Field(None, description="Normalized version for keyword matching")
     raw_code: Optional[str] = None
     
-    status: str = Field("INFO", description="Severity or Status (ALARM, RESTORE, INFO)")
+    status: Optional[str] = Field(None, description="Severity or Status (ALARM, RESTORE, INFO)")
     
     zone_label: Optional[str] = None
     category: Optional[str] = None

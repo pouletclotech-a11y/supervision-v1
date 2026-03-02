@@ -104,12 +104,18 @@ class Normalizer:
                 matched = True
                 
                 # 1. Set Type & Severity
+                # IMPORTANT: Never overwrite a parser-set business status (APPARITION/DISPARITION)
+                # with a generic YAML rule (e.g. TEST.* → INFO). Parser status takes priority.
+                PROTECTED_STATUSES = {"APPARITION", "DISPARITION", "ALARM"}
+                
                 if rule['type']:
                     event.event_type = rule['type']
                     event.normalized_type = rule['type'] # Update both for consistency if used differently
                 
                 if rule['severity']:
-                    event.status = rule['severity'] # Mapped to status/severity field
+                    # Only apply YAML severity if no protected status has been set by parser
+                    if event.status not in PROTECTED_STATUSES:
+                        event.status = rule['severity'] # Mapped to status/severity field
                 
                 # 2. Extractions
                 extract_map = rule['extract']
@@ -133,8 +139,10 @@ class Normalizer:
                     break
         
         if not matched:
-            # Fallback or just keep defaults
-            pass
+            # If parser already set a status (e.g. APPARITION), keep it.
+            # Otherwise default to INFO if not set.
+            if not event.status:
+                event.status = "INFO"
             
         return event
 

@@ -4,7 +4,7 @@ import hashlib
 import logging
 from pathlib import Path
 from datetime import datetime
-from typing import Iterable
+from typing import Iterable, Optional
 from app.ingestion.adapters.base import BaseAdapter, AdapterItem
 from app.core.config import settings
 
@@ -85,22 +85,26 @@ class DropboxAdapter(BaseAdapter):
         
         return final_dest
 
-    async def ack_success(self, item: AdapterItem, import_id: int):
+    async def ack_success(self, item: AdapterItem, import_id: int) -> Optional[Path]:
         dest_base = self._get_date_path(self.archive_dir)
         final_path = self._safe_move(Path(item.path), dest_base / item.filename)
         logger.info(f"[DropboxAdapter] Status=SUCCESS File={item.filename} Hash={item.sha256} ImportID={import_id} Dest={final_path}")
+        return final_path
 
-    async def ack_duplicate(self, item: AdapterItem, existing_import_id: int):
+    async def ack_duplicate(self, item: AdapterItem, existing_import_id: int) -> Path:
         dest_base = self.archive_dir / "duplicates"
         final_path = self._safe_move(Path(item.path), dest_base / item.filename)
         logger.info(f"[DropboxAdapter] Status=DUPLICATE File={item.filename} Hash={item.sha256} ExistingImportID={existing_import_id} Dest={final_path}")
+        return final_path
 
-    async def ack_unmatched(self, item: AdapterItem, reason: str):
+    async def ack_unmatched(self, item: AdapterItem, reason: str) -> Path:
         dest_base = self._get_date_path(self.unmatched_dir)
         final_path = self._safe_move(Path(item.path), dest_base / item.filename)
         logger.warning(f"[DropboxAdapter] Status=UNMATCHED File={item.filename} Hash={item.sha256} Reason={reason} Dest={final_path}")
+        return final_path
 
-    async def ack_error(self, item: AdapterItem, reason: str):
+    async def ack_error(self, item: AdapterItem, reason: str) -> Path:
         dest_base = self._get_date_path(self.error_dir)
         final_path = self._safe_move(Path(item.path), dest_base / item.filename)
         logger.error(f"[DropboxAdapter] Status=ERROR File={item.filename} Hash={item.sha256} Reason={reason} Dest={final_path}")
+        return final_path

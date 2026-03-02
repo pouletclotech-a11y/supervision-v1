@@ -132,6 +132,11 @@ class DBIngestionProfile(Base):
     excel_options: Mapped[Optional[dict]] = mapped_column(JSONB)
     csv_options: Mapped[Optional[dict]] = mapped_column(JSONB)
     
+    # Phase 2: Ingestion Déterministe
+    format_kind: Mapped[str] = mapped_column(String(50), default="XLSX_NATIVE")
+    action_config: Mapped[Optional[dict]] = mapped_column(JSONB, default={})
+    filename_regex: Mapped[Optional[str]] = mapped_column(String(255))
+    
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

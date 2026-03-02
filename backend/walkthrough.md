@@ -54,5 +54,6 @@ SELECT id, filename, events_count FROM (
 
 ---
 **Release v12.0.1 — Hotfix EFI**
-**Commit Hash** : `3dd7b9317f600f64fb08a6bcd6c716adbfed0127` (Base)
-**Statut** : ✅ VALIDÉ
+**Commit Hash** : `d9cdc3958fd5ddbd46bfeaa375a3b526e45b8086`  
+**Tag Hash** : `v12.0.1`  
+**Statut** : ✅ DÉPLOYÉ & VALIDÉ

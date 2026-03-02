@@ -19,9 +19,29 @@ from app.core.config import settings
 logger = logging.getLogger("email-adapter")
 
 class EmailAdapter(BaseAdapter):
-    def __init__(self, temp_dir: str = "/app/data/email_ingress"):
+    def __init__(self, temp_dir: str = "/app/data/email_ingress", archive_dir: str = "/app/data/archive"):
         self.temp_dir = Path(temp_dir)
+        self.archive_dir = Path(archive_dir)
         self.temp_dir.mkdir(parents=True, exist_ok=True)
+        self.archive_dir.mkdir(parents=True, exist_ok=True)
+
+    def _get_date_path(self, base_dir: Path) -> Path:
+        now = datetime.utcnow()
+        return base_dir / now.strftime("%Y") / now.strftime("%m") / now.strftime("%d")
+
+    def _safe_move(self, src: Path, dest: Path) -> Path:
+        import shutil
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        final_dest = dest
+        if final_dest.exists():
+            final_dest = dest.parent / f"{int(datetime.utcnow().timestamp())}_{dest.name}"
+        
+        try:
+            os.replace(src, final_dest)
+        except OSError:
+            shutil.move(str(src), str(final_dest))
+        
+        return final_dest
 
     async def _get_imap_config(self) -> dict:
         async with AsyncSessionLocal() as session:
@@ -289,29 +309,39 @@ class EmailAdapter(BaseAdapter):
         except Exception as e:
             logger.error(f"[EmailAdapter] Action Error ({action}) UID={uid}: {e}", exc_info=True)
 
-    async def ack_success(self, item: AdapterItem, import_id: int):
+    async def ack_success(self, item: AdapterItem, import_id: int) -> Optional[Path]:
         uid = item.metadata.get("imap_uid")
         folder = item.metadata.get("imap_folder", "inbox")
         run_id = item.metadata.get("poll_run_id", "")
         if uid:
             await self._update_last_uid(folder, int(uid))
             await self._imap_action(uid, 'SUCCESS')
+        
+        final_path = None
         if Path(item.path).exists():
-            Path(item.path).unlink()
-        logger.info(f"[METRIC] event=import_success adapter=email run_id={run_id} import_id={import_id} file={item.filename} uid={uid}")
+            dest_base = self._get_date_path(self.archive_dir)
+            final_path = self._safe_move(Path(item.path), dest_base / item.filename)
+            
+        logger.info(f"[METRIC] event=import_success adapter=email run_id={run_id} import_id={import_id} file={item.filename} uid={uid} archive={final_path}")
+        return final_path
 
-    async def ack_duplicate(self, item: AdapterItem, existing_import_id: int):
+    async def ack_duplicate(self, item: AdapterItem, existing_import_id: int) -> Optional[Path]:
         uid = item.metadata.get("imap_uid")
         folder = item.metadata.get("imap_folder", "inbox")
         run_id = item.metadata.get("poll_run_id", "")
         if uid:
             await self._update_last_uid(folder, int(uid))
             await self._imap_action(uid, 'SEEN')
+        
+        final_path = None
         if Path(item.path).exists():
-            Path(item.path).unlink()
-        logger.info(f"[METRIC] event=import_duplicate adapter=email run_id={run_id} file={item.filename} uid={uid} existing_import_id={existing_import_id}")
+            dest_base = self.archive_dir / "duplicates"
+            final_path = self._safe_move(Path(item.path), dest_base / item.filename)
+            
+        logger.info(f"[METRIC] event=import_duplicate adapter=email run_id={run_id} file={item.filename} uid={uid} existing_import_id={existing_import_id} archive={final_path}")
+        return final_path
 
-    async def ack_unmatched(self, item: AdapterItem, reason: str):
+    async def ack_unmatched(self, item: AdapterItem, reason: str) -> Optional[Path]:
         uid = item.metadata.get("imap_uid")
         folder = item.metadata.get("imap_folder", "inbox")
         run_id = item.metadata.get("poll_run_id", "")
@@ -319,13 +349,23 @@ class EmailAdapter(BaseAdapter):
             # Advance bookmark even on unmatched — prevents infinite stall on bad files
             await self._update_last_uid(folder, int(uid))
             await self._imap_action(uid, 'SEEN')
+        
+        final_path = None
         if Path(item.path).exists():
-            Path(item.path).unlink()
-        logger.warning(f"[METRIC] event=import_unmatched adapter=email run_id={run_id} file={item.filename} uid={uid} reason={reason}")
+            dest_base = self._get_date_path(self.archive_dir / "unmatched")
+            final_path = self._safe_move(Path(item.path), dest_base / item.filename)
+            
+        logger.warning(f"[METRIC] event=import_unmatched adapter=email run_id={run_id} file={item.filename} uid={uid} reason={reason} archive={final_path}")
+        return final_path
 
-    async def ack_error(self, item: AdapterItem, reason: str):
+    async def ack_error(self, item: AdapterItem, reason: str) -> Optional[Path]:
         # On processing error: DO NOT advance bookmark → allows retry on restart
         run_id = item.metadata.get("poll_run_id", "")
+        
+        final_path = None
         if Path(item.path).exists():
-            Path(item.path).unlink()
-        logger.error(f"[METRIC] event=import_error adapter=email run_id={run_id} file={item.filename} reason={reason}")
+            dest_base = self._get_date_path(self.archive_dir / "error")
+            final_path = self._safe_move(Path(item.path), dest_base / item.filename)
+            
+        logger.error(f"[METRIC] event=import_error adapter=email run_id={run_id} file={item.filename} reason={reason} archive={final_path}")
+        return final_path

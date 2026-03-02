@@ -11,10 +11,10 @@ mkdir -p /app/data/uploads
 if [ "$(id -u)" = '0' ]; then
     echo "Correction des permissions pour les répertoires de données..."
     # On cible uniquement les dossiers nécessaires à l'ingestion
-    chown -R appuser:appuser /app/data/email_ingress
-    chown -R appuser:appuser /app/data/ingress
-    chown -R appuser:appuser /app/data/archive
-    chown -R appuser:appuser /app/data/uploads
+    chown -R appuser:appuser /app/data/email_ingress || true
+    chown -R appuser:appuser /app/data/ingress || true
+    chown -R appuser:appuser /app/data/archive || true
+    chown -R appuser:appuser /app/data/uploads || true
     
     echo "Exécution de la commande en tant qu'appuser..."
     exec gosu appuser "$@"

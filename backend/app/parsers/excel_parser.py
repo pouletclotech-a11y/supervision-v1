@@ -23,68 +23,28 @@ class ExcelParser(BaseParser):
     """
 
     def supported_extensions(self) -> List[str]:
-        return ['.xls', '.xlsx']
-
-    def _normalize_site_code(self, code: str) -> str:
-        return normalize_site_code(code)
+        return ['.xlsx']
 
     def parse(self, file_path: str, source_timezone: str = "UTC", parser_config: dict = None) -> List[NormalizedEvent]:
-        # Check if it's a real Excel file (binary)
-        is_binary = False
-        try:
-            with open(file_path, 'rb') as f:
-                header = f.read(4)
-                if header == b'PK\x03\x04': # ZIP header for .xlsx
-                    is_binary = True
-        except Exception:
-            pass
-
-        if is_binary:
-            import logging
-            logging.getLogger("excel-parser").info(f" [XLSX_PARSE_START] {file_path}")
-            return self._parse_real_excel(file_path, source_timezone, parser_config)
-        else:
-            import logging
-            logging.getLogger("excel-parser").info(f" [XLS_PARSE_START] {file_path}")
-            return self._parse_tsv_excel(file_path, source_timezone, parser_config)
-
-    def _parse_real_excel(self, file_path: str, source_timezone: str = "UTC", parser_config: dict = None) -> List[NormalizedEvent]:
         import pandas as pd
         import logging
         logger = logging.getLogger("excel-parser")
+        logger.info(f" [XLSX_PARSE_START] {file_path}")
         events = []
+        
+        mapping = parser_config.get("mapping", {}) if parser_config else {}
+        action_config = parser_config.get("action_config", {}) if parser_config else {}
+        
         try:
-            # EFI Diagnostic
-            is_efi = parser_config.get("is_efi", False) if parser_config else False
-            
             # Explicitly use openpyxl for .xlsx
             df = pd.read_excel(file_path, header=None, engine='openpyxl')
             
-            if is_efi:
-                try:
-                    import openpyxl
-                    wb = openpyxl.load_workbook(file_path, read_only=True)
-                    logger.info(f" [EFI_SHEETS] sheets={wb.sheetnames}")
-                except:
-                    pass
-                logger.info(f" [EFI_DF_SHAPE] rows={len(df)} cols={len(df.columns) if not df.empty else 0}")
-                logger.info(f" [EFI_ROWS_DETECTED] count={len(df)}")
-                if not df.empty:
-                    sample = df.head(3).values.tolist()
-                    logger.info(f" [EFI_FIRST_ROWS_SAMPLE] sample_3_rows={sample}")
-
             # Diagnostic Log: Raw sample content
             if not df.empty:
-                sample = df.head(3).to_dict(orient='records')
-                logger.info(f" [XLSX_RAW_ROWS_CONTENT_SAMPLE] sample={sample}")
+                logger.debug(f" [XLSX_DF_SHAPE] rows={len(df)} cols={len(df.columns)}")
             else:
                 logger.warning(f" [XLSX_RAW_ROWS_CONTENT_SAMPLE] EMPTY DATAFRAME")
-            is_histo = False
-            if parser_config and parser_config.get("format") == "HISTO":
-                is_histo = True
-            elif not df.empty and str(df.iloc[0, 0]).strip().upper() == 'YPSILON_HISTO':
-                is_histo = True
-                
+            
             # Context trackers (Inheritance)
             ctx_site_code = None
             ctx_site_code_raw = None
@@ -93,33 +53,99 @@ class ExcelParser(BaseParser):
             ctx_date = None
 
             for idx, row_series in df.iterrows():
-                # PD specific: convert all values to strings for unified processing, 
-                # but keep nulls as empty strings.
-                # Handle potential float conversion of site codes (69000.0)
                 row = []
                 for val in row_series.tolist():
                     if val is None or (isinstance(val, float) and pd.isna(val)):
                         row.append("")
                     else:
-                        row.append(val) # Keep as objects, _process_row will handle conversion
+                        row.append(val)
 
                 row_idx = idx + 1
                 
-                # Pad to at least 15 columns for HISTO
-                while len(row) < 15:
-                    row.append("")
-                
-                try:
-                    processed = self._process_row(row, row_idx, file_path, ctx_site_code, ctx_site_code_raw, ctx_client_name, ctx_day, ctx_date, is_histo, source_timezone, is_efi=is_efi)
-                    if processed:
-                        evt, ctx_site_code, ctx_site_code_raw, ctx_client_name, ctx_day, ctx_date = processed
-                        if evt:
-                            events.append(evt)
-                except Exception as row_err:
-                    logger.error(f" [XLSX_ROW_ERROR] row={row_idx} file={file_path}: {row_err}")
-            
-            if is_efi:
-                logger.info(f" [EFI_EVENTS_CREATED] count={len(events)}")
+                # Zéro Heuristique: If mapping is present, use it
+                if mapping:
+                    # Helper to get by index or letter
+                    def get_val(key):
+                        idx_val = mapping.get(key)
+                        if idx_val is None: return None
+                        if isinstance(idx_val, str) and len(idx_val) == 1:
+                            idx = ord(idx_val.upper()) - ord('A')
+                        else:
+                            idx = int(idx_val)
+                        return row[idx] if idx < len(row) else ""
+
+                    # Site code logic (Propagation if empty)
+                    current_site = str(get_val("site_code")).strip()
+                    if current_site:
+                        ctx_site_code_raw = current_site
+                        ctx_site_code = normalize_site_code(current_site)
+                    
+                    if not ctx_site_code: continue
+
+                    # Date/Time
+                    raw_dt = get_val("date_time")
+                    if not raw_dt:
+                        d = get_val("date")
+                        t = get_val("time")
+                        if d and t: raw_dt = f"{d} {t}"
+                    
+                    if not raw_dt: continue
+                    
+                    # Parse Date (Robust)
+                    try:
+                        if isinstance(raw_dt, datetime):
+                            dt = raw_dt
+                        else:
+                            dt = None
+                            for fmt in ["%d/%m/%Y %H:%M:%S", "%Y-%m-%d %H:%M:%S"]:
+                                try:
+                                    dt = datetime.strptime(str(raw_dt), fmt)
+                                    break
+                                except: continue
+                            if not dt: continue
+                    except: continue
+
+                    # Msg/Code
+                    msg = str(get_val("message") or "")
+                    code = str(get_val("raw_code") or "")
+
+                    # Action
+                    action = "INFO"
+                    mode = action_config.get("mode", "NONE")
+                    if mode == "COLUMN":
+                        action = str(get_val("action") or "INFO")
+                    elif mode == "REGEX_DERIVE":
+                        source = msg if action_config.get("source_field") == "message" else code
+                        for reg in action_config.get("regex_app", []):
+                            if re.search(reg, source, re.IGNORECASE):
+                                action = "APPARITION"; break
+                        if action == "INFO":
+                            for reg in action_config.get("regex_dis", []):
+                                if re.search(reg, source, re.IGNORECASE):
+                                    action = "DISPARITION"; break
+
+                    evt = NormalizedEvent(
+                        timestamp=dt,
+                        site_code=ctx_site_code,
+                        site_code_raw=ctx_site_code_raw,
+                        event_type="GENERIC",
+                        raw_message=msg,
+                        raw_code=code,
+                        status=action,
+                        source_file=file_path,
+                        row_index=row_idx,
+                        raw_data=json.dumps(row),
+                        tenant_id="default"
+                    )
+                    events.append(evt)
+                else:
+                    # Backward compatibility for existing logic if mapping empty (Phase transition)
+                    try:
+                        processed = self._process_row(row, row_idx, file_path, ctx_site_code, ctx_site_code_raw, ctx_client_name, ctx_day, ctx_date, False, source_timezone)
+                        if processed:
+                            evt, ctx_site_code, ctx_site_code_raw, ctx_client_name, ctx_day, ctx_date = processed
+                            if evt: events.append(evt)
+                    except: pass
             
             logger.info(f" [XLSX_EVENTS_CREATED] count={len(events)}")
             
@@ -127,57 +153,6 @@ class ExcelParser(BaseParser):
             logger.error(f" [XLSX_FATAL_ERROR] file={file_path}: {e}")
             raise e
             
-        return events
-
-    def _parse_tsv_excel(self, file_path: str, source_timezone: str = "UTC", parser_config: dict = None) -> List[NormalizedEvent]:
-        import logging
-        logger = logging.getLogger("excel-parser")
-        events = []
-        # Context trackers (Inheritance)
-        ctx_site_code = None
-        ctx_site_code_raw = None
-        ctx_client_name = None
-        ctx_day = None
-        ctx_date = None
-
-        # EFI Diagnostic
-        is_efi = parser_config.get("is_efi", False) if parser_config else False
-        
-        with open(file_path, 'r', encoding='latin-1', errors='replace') as f:
-            reader = csv.reader(f, delimiter='\t')
-            rows = list(reader)
-            
-            if is_efi:
-                logger.info(f" [EFI_DF_SHAPE] rows={len(rows)} cols={len(rows[0]) if rows else 0}")
-                logger.info(f" [EFI_ROWS_DETECTED] count={len(rows)}")
-                if rows:
-                    logger.info(f" [EFI_FIRST_ROWS_SAMPLE] sample_3_rows={rows[:3]}")
-
-            logger.info(f" [XLS_ROWS_DETECTED] count={len(rows)}")
-            
-            row_idx = 0
-            for row in rows:
-                row_idx += 1
-                if not row: continue
-                # Clean row elements
-                clean_row = [clean_excel_value(c) for c in row]
-                # Pad to at least 6 columns
-                while len(clean_row) < 6:
-                    clean_row.append("")
-                
-                try:
-                    processed = self._process_row(clean_row, row_idx, file_path, ctx_site_code, ctx_site_code_raw, ctx_client_name, ctx_day, ctx_date, False, source_timezone, is_efi=is_efi)
-                    if processed:
-                        evt, ctx_site_code, ctx_site_code_raw, ctx_client_name, ctx_day, ctx_date = processed
-                        if evt:
-                            events.append(evt)
-                except Exception as row_err:
-                    logger.error(f" [XLS_ROW_ERROR] row={row_idx} file={file_path}: {row_err}")
-            
-            if is_efi:
-                logger.info(f" [EFI_EVENTS_CREATED] count={len(events)}")
-            
-            logger.info(f" [XLS_EVENTS_CREATED] count={len(events)}")
         return events
 
     def _process_row(self, clean_row, row_idx, file_path, ctx_site_code, ctx_site_code_raw, ctx_client_name, ctx_day, ctx_date, is_histo=False, source_timezone="UTC", is_efi=False):

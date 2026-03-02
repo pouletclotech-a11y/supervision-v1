@@ -48,12 +48,11 @@ class IngestionProfile(BaseModel):
     
     detection: DetectionRules
     
-    # Options spécifiques au format (Condition 6 - Zéro Hardcode)
-    parser_config: Dict[str, Any] = Field(default_factory=dict, description="Configuration libre pour les parsers (ex: {'excel_type': 'HISTO'})")
-    
-    excel_options: Optional[ExcelOptions] = None
-    csv_options: Optional[CsvOptions] = None
-    
+    # Phase 2 : Ingestion Déterministe
+    format_kind: str = Field("XLSX_NATIVE", description="XLSX_NATIVE, TSV_XLS")
+    action_config: Dict[str, Any] = Field(default_factory=dict, description="Configuration dérivation action")
+    filename_regex: Optional[str] = Field(None, description="Regex optionnelle pour filtrer par nom de fichier")
+
     mapping: List[MappingRule] = Field(default_factory=list)
     extraction_rules: Dict[str, str] = Field(default_factory=dict, description="Regex nommées pour extraction de texte")
     normalization: List[NormalizationRule] = Field(default_factory=list)

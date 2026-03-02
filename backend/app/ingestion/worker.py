@@ -9,6 +9,7 @@ import uuid
 from pathlib import Path
 from datetime import datetime
 from typing import Optional, List, Any
+import re
 
 from app.core.config import settings
 from sqlalchemy import select, update, delete
@@ -62,14 +63,42 @@ async def get_redis_client():
     return redis.from_url(f"redis://{settings.POSTGRES_SERVER.replace('db', 'redis')}:6379", encoding="utf-8", decode_responses=True)
 
 
+def detect_file_format(path: Path) -> str:
+    """
+    Detect format by magic numbers and content (Phase 2).
+    """
+    try:
+        with open(path, 'rb') as f:
+            header = f.read(8)
+            # PK ZIP (XLSX)
+            if header.startswith(b'PK\x03\x04'):
+                return "XLSX_NATIVE"
+            # OLE2 (Old XLS)
+            if header.startswith(b'\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1'):
+                return "OLE2_XLS"
+        
+        # Fallback to Text/TSV detection
+        with open(path, 'r', encoding='latin-1', errors='replace') as f:
+            # Check first 5 lines for tabs
+            lines = [f.readline() for _ in range(5)]
+            tab_count = sum(line.count('\t') for line in lines)
+            if tab_count > 0:
+                return "TSV_XLS"
+    except:
+        pass
+    return "UNKNOWN"
+
 async def process_ingestion_item(adapter: BaseAdapter, item: AdapterItem, redis_lock: RedisLock, redis_client, poll_run_id: str = "", existing_import_id: int = None) -> Optional[int]:
     """
     Refactored ingestion pipeline (Phase 3).
     Handles: Hash -> Lock -> Profile Match -> Parse -> DB -> Archive -> Unlock.
-    Returns (primary_import_id, events) on success.
     """
     file_path = Path(item.path)
-    logger.info(f"[Ingestion] ATTACHMENT_RECEIVED: filename={item.filename} size={item.size_bytes} ext={file_path.suffix.lower()}")
+    ext = file_path.suffix.lower().lstrip('.')
+    
+    # NEW: Detect Format Robustly (Phase 2)
+    detected_kind = detect_file_format(file_path)
+    logger.info(f"[INGEST_FORMAT_DETECTED] filename={item.filename} kind={detected_kind}")
     
     # 1. Compute Hash (Streaming)
     try:
@@ -95,87 +124,101 @@ async def process_ingestion_item(adapter: BaseAdapter, item: AdapterItem, redis_
             if existing_import:
                 if existing_import.status == "SUCCESS":
                     logger.info(f"[METRIC] run_id={poll_run_id} event=import_duplicate adapter={adapter.__class__.__name__} file={item.filename} sha256={item.sha256[:8]}")
-                    await adapter.ack_duplicate(item, existing_import.id)
+                    archive_path = await adapter.ack_duplicate(item, existing_import.id)
+                    if archive_path:
+                        existing_import.archive_path = str(archive_path)
+                        existing_import.archive_status = "ARCHIVED"
+                        await session.commit()
                     return existing_import.id, []
                 elif existing_import.status == "REPLAY_REQUESTED":
                     logger.info(f"[REPLAY] Hash match found for {item.filename} with REPLAY_REQUESTED status. Starting transactional replace.")
                     is_replay = True
 
-            # 4. Classification de l'import (SMTP Provider)
+            # 4. Classification initiale et Création de l'ImportLog
             sender_email = item.metadata.get('sender_email')
             resolved_provider_id = await ClassificationService.classify_email(session, sender_email)
-            
-            # --- Profiling (déjà existant) ---
-            # Reload profiles each item to ensure DB sync
-            await profile_manager.load_profiles(session)
-
-            # --- Attachment Filtering (Phase 6.2) ---
             monitoring_provider = await repo.get_monitoring_provider(resolved_provider_id)
-            accepted_types = monitoring_provider.accepted_attachment_types if monitoring_provider else ["pdf", "xls", "xlsx"]
+            provider_code = monitoring_provider.code if monitoring_provider else "UNKNOWN"
+
+            # On crée l'import_log dès maintenant (Phase 2 Architecture)
+            if existing_import_id:
+                import_log = await repo.session.get(ImportLog, existing_import_id)
+            elif is_replay:
+                import_log = existing_import
+            else:
+                import_log = await repo.create_import_log(item.filename, file_hash=item.sha256, provider_id=resolved_provider_id)
             
-            ext = file_path.suffix.lower().replace('.', '')
-            if ext not in accepted_types:
-                logger.info(f"[Ingestion] FILTER_DECISION: IGNORED file={item.filename} reason=FORMAT_REJECTED")
-                logger.warning(f"[METRIC] run_id={poll_run_id} event=import_rejected file={item.filename} ext={ext} reason=FORMAT_REJECTED")
-                import_log = await repo.create_import_log(item.filename, file_hash=item.sha256)
-                import_log.provider_id = resolved_provider_id
-                import_log.adapter_name = item.source
-                import_log.status = "IGNORED"
-                import_log.import_metadata = {"reason": "FORMAT_REJECTED", "extension": ext}
+            import_log.adapter_name = item.source
+
+            # 5. Profile Matching (Phase 2: Provider + Kind + Filename)
+            await profile_manager.load_profiles(session)
+            profiles = profile_manager.list_profiles()
+            
+            # Phase 2 improvement: Try to find a profile that matches by (provider OR regex) AND format_kind
+            matched_profile = None
+            
+            # We sort by priority just in case
+            sorted_profiles = sorted(profiles, key=lambda x: x.priority, reverse=True)
+            
+            for p in sorted_profiles:
+                if p.format_kind != detected_kind:
+                    continue
+                
+                # Case A: Provider matches
+                provider_match = (p.provider_code == provider_code)
+                
+                # Case B: Filename regex matches (stronger signal)
+                filename_match = False
+                if p.filename_regex:
+                    if re.search(p.filename_regex, item.filename, re.IGNORECASE):
+                        filename_match = True
+                
+                # Case C: Profile is provider-agnostic (NULL provider_code)
+                agnostic_match = (p.provider_code is None or p.provider_code == "")
+                
+                # PRIORITY: 1. Regex Match, 2. Explicit Provider Match, 3. Agnostic Match
+                if filename_match:
+                    matched_profile = p
+                    # If we matched via regex, we MUST update the provider to the profile's provider
+                    if p.provider_code and p.provider_code != provider_code:
+                        logger.info(f"[Classification] Re-classified via profile regex: {item.filename} ({provider_code} -> {p.provider_code})")
+                        provider_code = p.provider_code
+                        # Synchronize with DB provider_id
+                        new_p = await repo.get_monitoring_provider_by_code(p.provider_code)
+                        if new_p:
+                            import_log.provider_id = new_p.id
+                    break
+                elif provider_match:
+                    matched_profile = p
+                    break
+                elif agnostic_match:
+                    # We store it as a potential match but keep looking for a regex match
+                    if not matched_profile:
+                        matched_profile = p
+
+            if not matched_profile:
+                # Fallback to old matcher (headers/text) if no explicit profile found
+                headers_probe, text_probe = get_file_probe(file_path)
+                matched_profile, match_report = profile_matcher.match(file_path, headers=headers_probe, text_content=text_probe)
+            
+            if matched_profile is None:
+                logger.warning(f"[INGEST_REJECT] event=profile_not_found file={item.filename} provider={provider_code} kind={detected_kind}")
+                import_log = await repo.create_import_log(item.filename, file_hash=item.sha256, provider_id=resolved_provider_id)
+                await repo.update_import_log(import_log.id, "PROFILE_NOT_CONFIDENT", 0, 0, "No profile matched provider/kind/regex")
+                archive_path = await adapter.ack_unmatched(item, "No profile matched")
+                if archive_path:
+                    import_log.archive_path = str(archive_path)
+                    import_log.archive_status = "ARCHIVED"
                 await session.commit()
-                await adapter.ack_error(item, f"REJECTED: format {ext} not accepted for provider {resolved_provider_id}")
                 return None, []
 
-            # 5. Profile Matching (Phase 3: abstraction & threshold)
-            headers_probe, text_probe = get_file_probe(file_path)
-            profile, match_report = profile_matcher.match(file_path, headers=headers_probe, text_content=text_probe)
+            logger.info(f"[INGEST_PROFILE_SELECTED] provider={provider_code} profile_id={matched_profile.profile_id} format_kind={matched_profile.format_kind} (detected={detected_kind}) filename={item.filename}")
             
-            if profile is None:
-                logger.warning(f"[METRIC] run_id={poll_run_id} event=import_unmatched adapter={adapter.__class__.__name__} file={item.filename} status=PROFILE_NOT_CONFIDENT")
-                
-                # Traceability (Final Condition 2)
-                raw_payload_sample = ""
-                if text_probe:
-                    raw_payload_sample = text_probe
-                elif headers_probe:
-                    raw_payload_sample = "|".join(headers_probe)
-                
-                import_metadata = {
-                    "match_score": match_report.get("best_score"),
-                    "best_candidate": match_report.get("best_candidate_id"),
-                    "match_details": match_report.get("candidates")
-                }
-                
-                import_log = await repo.create_import_log(
-                    item.filename, 
-                    file_hash=item.sha256,
-                    provider_id=resolved_provider_id,
-                    import_metadata=import_metadata,
-                    raw_payload=raw_payload_sample
-                )
-                import_log.adapter_name = item.source
-                if hasattr(item, 'source_message_id') and item.source_message_id:
-                    import_log.source_message_id = item.source_message_id
-                
-                await repo.update_import_log(import_log.id, "PROFILE_NOT_CONFIDENT", 0, 0, "No profile reached confidence threshold")
-                await session.commit()
-                await adapter.ack_unmatched(item, "Profile confidence too low")
-                return import_log.id, []
-
-            logger.info(f"[Ingestion] FILTER_DECISION: ACCEPT {ext} file={item.filename} -> matching profile...")
-            logger.info(f"[{adapter.__class__.__name__}] MATCH [{item.filename}] EXT={ext} -> {profile.profile_id} (Score: {match_report['best_score']}) ACCEPT")
-
-            # --- Provider Override by Profile (Roadmap 9) ---
-            if profile.provider_code:
-                # Try to resolve actual provider_id from profile's provider_code
-                profile_provider = await repo.get_monitoring_provider_by_code(profile.provider_code)
-                if profile_provider:
-                    if resolved_provider_id != profile_provider.id:
-                        logger.info(f"[Ingestion] PROVIDER_OVERRIDE: email_resolved={resolved_provider_id} -> profile_provider={profile_provider.id} ({profile.provider_code})")
-                        resolved_provider_id = profile_provider.id
-            
-            # 5. Get Parser
-            parser = ParserFactory.get_parser(f".{ext}")
+            # 6. Get Parser
+            parser = ParserFactory.get_parser_by_kind(matched_profile.format_kind)
+            if not parser:
+                logger.warning(f"No parser for kind {matched_profile.format_kind}, falling back to extension {file_path.suffix}")
+                parser = ParserFactory.get_parser(file_path.suffix)
             
             # --- EFI DIAGNOSTIC (STRICT MODE - ZERO HARDCODING) ---
             monitoring_provider = await repo.get_monitoring_provider(resolved_provider_id)
@@ -198,28 +241,15 @@ async def process_ingestion_item(adapter: BaseAdapter, item: AdapterItem, redis_
             
             if not parser:
                 error_msg = f"No parser found for extension .{ext}"
-                import_log = await repo.create_import_log(item.filename, file_hash=item.sha256)
                 await repo.update_import_log(import_log.id, "ERROR", 0, 0, error_msg)
+                archive_path = await adapter.ack_error(item, error_msg)
+                if archive_path:
+                    import_log.archive_path = str(archive_path)
+                    import_log.archive_status = "ARCHIVED"
                 await session.commit()
-                await adapter.ack_error(item, error_msg)
                 return None, []
 
             # 6. Full Processing
-            if existing_import_id:
-                import_log = await repo.session.get(ImportLog, existing_import_id)
-            elif is_replay:
-                import_log = existing_import
-            else:
-                import_log = await repo.create_import_log(item.filename, file_hash=item.sha256)
-                
-            import_log.adapter_name = item.source
-            import_log.provider_id = resolved_provider_id
-            if hasattr(item, 'source_message_id') and item.source_message_id:
-                import_log.source_message_id = item.source_message_id
-
-            # Phase Roadmap 11: Commit the log creation so it exists in DB even if processing crashes
-            await session.commit()
-            
             # Re-fetch it in the new transaction
             import_log = await session.get(ImportLog, import_log.id)
             repo = EventRepository(session) # Refresh repo session if needed (though it shares it)
@@ -288,15 +318,21 @@ async def process_ingestion_item(adapter: BaseAdapter, item: AdapterItem, redis_
                     import_log.pdf_path = str(file_path)
                     logger.info(f"[Ingestion] PDF_SUPPORT_WRITTEN for primary import_id={import_log.id}")
 
-                # Pass parser_config (Phase 3 abstraction)
+                # Phase 3: Convert List[MappingRule] to Dict for parsers
+                mapping_dict = {m.target: m.source for m in matched_profile.mapping}
+                
+                # Pass parser_config (Phase 2 deterministic)
                 parse_result = parser.parse(
                     str(file_path), 
-                    source_timezone=profile.source_timezone,
-                    parser_config={"is_efi": is_efi}
+                    source_timezone=matched_profile.source_timezone,
+                    parser_config={
+                        "mapping": mapping_dict,
+                        "action_config": matched_profile.action_config
+                    }
                 )
                 events = parse_result if isinstance(parse_result, list) else []
 
-                logger.info(f"Extracted {len(events)} events using {parser.__class__.__name__}")
+                logger.info(f"Extracted {len(events)} events using {parser.__class__.__name__} for profile {matched_profile.profile_id}")
                 
                 # Normalize, Deduplicate, Tag, Alert
                 dedup_service = DeduplicationService(redis_client)
@@ -366,13 +402,18 @@ async def process_ingestion_item(adapter: BaseAdapter, item: AdapterItem, redis_
                 meta["metrics"] = metrics
                 import_log.import_metadata = meta
 
-                logger.info(f"[METRIC] import_id={import_log.id} status=SUCCESS extracted={metrics['extracted']} dedup_kept={metrics['dedup_kept']} inserted_db={metrics['inserted_db']}")
+                logger.info(f"[EVENTS_CREATED] import_id={import_log.id} count={inserted_db_count} (extracted={len(events)}, dedup_kept={len(unique_events)})")
                 
                 await repo.update_import_log(import_log.id, "SUCCESS", inserted_db_count, duplicates_count)
                 # Phase 2.B: Update monitoring last success
                 await repo.update_provider_last_import(resolved_provider_id, datetime.utcnow())
+                
+                archive_path = await adapter.ack_success(item, import_log.id)
+                if archive_path:
+                    import_log.archive_path = str(archive_path)
+                    import_log.archive_status = "ARCHIVED"
+                
                 await session.commit()
-                await adapter.ack_success(item, import_log.id)
                 return import_log.id, events
 
             except Exception as e:
@@ -409,7 +450,13 @@ async def process_ingestion_item(adapter: BaseAdapter, item: AdapterItem, redis_
                     except Exception as e2:
                         logger.error(f"Failed to persist error metadata: {e2}")
                 
-                await adapter.ack_error(item, error_msg)
+                archive_path = await adapter.ack_error(item, error_msg)
+                if archive_path and import_log:
+                    import_log.archive_path = str(archive_path)
+                    import_log.archive_status = "ARCHIVED"
+                
+                if import_log:
+                    await session.commit()
                 return None, []
 
     except Exception as e:

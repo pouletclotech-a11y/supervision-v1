@@ -96,8 +96,13 @@ class TaggingService:
             })
             
         # Apply tags
+        # IMPORTANT: Never overwrite parser-derived business statuses (APPARITION/DISPARITION/ALARM)
+        # with generic catalog severity tags. Parser action takes priority over catalog classification.
+        PROTECTED_STATUSES = {"APPARITION", "DISPARITION", "ALARM"}
+        
         event.category = mapping["category"]
-        event.status = mapping["severity"].upper()
+        if event.status not in PROTECTED_STATUSES:
+            event.status = mapping["severity"].upper()
         event.alertable_default = mapping["alertable_default"]
         
         # Optional: store catalog label in metadata
