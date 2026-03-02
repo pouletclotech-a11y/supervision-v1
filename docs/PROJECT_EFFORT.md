@@ -3,8 +3,8 @@
 Ce document recense les heures investies dans la conception, le développement et la sécurisation de la plateforme **Supervision-V1**.
 
 ## Résumé
-- **Dernière mise à jour** : 2026-03-01
-- **Total cumulé** : 287 heures
+- **Dernière mise à jour** : 2026-03-02
+- **Total cumulé** : 293 heures
 
 ---
 
@@ -26,6 +26,13 @@ Ce document recense les heures investies dans la conception, le développement e
 ---
 
 ## 2. Historique des Ajouts
+
+### 2026-03-02 — Phase 4 — UI Fix (Import Page) & Replay Hardening [+6h]
+- **Frontend** : Correction du crash "Application error" (MUI `Unstable_Grid2` + `API_ORIGIN`).
+- **Backend** : Fix `MissingGreenlet` dans `replay-last-48h` (caching des attributs SQLAlchemy).
+- **Parsers** : Support du mapping de type `list` (List[MappingRule]) dans `TsvParser` et `ExcelParser`.
+- **Validation** : Success Replay sur 38 imports (56 événements persistés en APPARITION/DISPARITION).
+- **Commit** : `fix: import page crash and 48h replay mapping errors`.
 
 ### 2026-03-02 — Release Patch v12.0.1 — Hotfix EFI [+4h]
 - **Correction** : Support des colonnes Date/Heure séparées pour le format YPSILON (EFI).

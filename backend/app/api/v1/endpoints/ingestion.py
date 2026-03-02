@@ -64,24 +64,29 @@ async def replay_last_48h(
     admin_repo = AdminRepository(db)
 
     for imp in imports:
+        imp_id = imp.id 
+        imp_filename = imp.filename
+        archive_path_str = imp.archive_path
+        provider_id = imp.provider_id
+        
         try:
-            if not imp.archive_path:
+            if not archive_path_str:
                 continue
             
-            file_path = Path(imp.archive_path)
+            file_path = Path(archive_path_str)
             if not file_path.exists():
                 # Fallback to absolute /app prefix if needed
                 if not str(file_path).startswith("/app"):
                     file_path = Path("/app") / str(file_path).lstrip('/')
                 
                 if not file_path.exists():
-                    errors.append({"import_id": imp.id, "error": f"File not found: {imp.archive_path}"})
+                    errors.append({"import_id": imp_id, "error": f"File not found: {archive_path_str}"})
                     continue
 
             # Detect and Match
             kind = detect_file_format(file_path)
             
-            provider = await repo.get_monitoring_provider(imp.provider_id)
+            provider = await repo.get_monitoring_provider(provider_id)
             provider_code = provider.code if provider else "UNKNOWN"
             
             profiles = pm.list_profiles()
@@ -94,7 +99,7 @@ async def replay_last_48h(
             
             for p in sorted(potential_profiles, key=lambda x: x.priority, reverse=True):
                 if p.filename_regex:
-                    if re.search(p.filename_regex, imp.filename, re.IGNORECASE):
+                    if re.search(p.filename_regex, imp_filename, re.IGNORECASE):
                         matched_profile = p
                         break
                 else:
@@ -108,19 +113,19 @@ async def replay_last_48h(
                 matched_profile, _ = matcher.match(file_path, headers=headers, text_content=text)
 
             if not matched_profile:
-                errors.append({"import_id": imp.id, "error": "No profile matched during replay"})
+                errors.append({"import_id": imp_id, "error": "No profile matched during replay"})
                 continue
 
             # Parser Selection
             parser = ParserFactory.get_parser_by_kind(matched_profile.format_kind) or ParserFactory.get_parser(file_path.suffix)
             if not parser:
-                errors.append({"import_id": imp.id, "error": f"No parser for kind {matched_profile.format_kind}"})
+                errors.append({"import_id": imp_id, "error": f"No parser for kind {matched_profile.format_kind}"})
                 continue
 
             # Transactional Clear & Parse
             async with db.begin_nested():
                 # Purge old data
-                await admin_repo.delete_import_data(imp.id)
+                await admin_repo.delete_import_data(imp_id)
                 
                 # Re-parse
                 parsed_events = parser.parse(
@@ -133,8 +138,7 @@ async def replay_last_48h(
                 )
                 
                 # Import mapping into schema-aware list
-                # (Simple for now, assume NormalizedEvent from parser is OK)
-                db_evts = await repo.create_batch(parsed_events, import_id=imp.id)
+                db_evts = await repo.create_batch(parsed_events, import_id=imp_id)
                 
                 # Update counts
                 imp.status = "SUCCESS"
@@ -145,8 +149,8 @@ async def replay_last_48h(
             await db.commit() # Commit this import
             
         except Exception as e:
-            logger.error(f"Error replaying import {imp.id}: {e}")
-            errors.append({"import_id": imp.id, "error": str(e)})
+            logger.error(f"Error replaying import {imp_id}: {str(e)}")
+            errors.append({"import_id": imp_id, "error": str(e)})
             # nested transaction handled by 'async with db.begin_nested()'
 
     return {

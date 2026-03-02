@@ -32,8 +32,19 @@ class ExcelParser(BaseParser):
         logger.info(f" [XLSX_PARSE_START] {file_path}")
         events = []
         
-        mapping = parser_config.get("mapping", {}) if parser_config else {}
+        mapping_raw = parser_config.get("mapping", []) if parser_config else []
         action_config = parser_config.get("action_config", {}) if parser_config else {}
+        
+        # Convert List[MappingRule] to Dict for fast lookup
+        mapping = {}
+        if isinstance(mapping_raw, list):
+            for m in mapping_raw:
+                if isinstance(m, dict):
+                    mapping[m.get("target")] = m.get("source")
+                elif hasattr(m, "target") and hasattr(m, "source"):
+                    mapping[m.target] = m.source
+        else:
+            mapping = mapping_raw
         
         try:
             # Explicitly use openpyxl for .xlsx

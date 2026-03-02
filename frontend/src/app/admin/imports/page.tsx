@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import Layout from '../../../components/Layout';
-import { fetchWithAuth } from '@/lib/api';
+import { fetchWithAuth, API_ORIGIN } from '@/lib/api';
 import {
     Box,
     Paper,
@@ -23,7 +23,8 @@ import {
     CircularProgress,
     Stack,
     TextField,
-    InputAdornment
+    InputAdornment,
+    Unstable_Grid2 as Grid
 } from '@mui/material';
 import {
     RefreshCw,
@@ -186,7 +187,7 @@ export default function ImportsPage() {
                                             <IconButton size="small" onClick={() => handleInspect(imp)} color="primary">
                                                 <Eye size={18} />
                                             </IconButton>
-                                            <IconButton size="small" component="a" href={`${API_URL}/imports/${imp.id}/download`} target="_blank">
+                                            <IconButton size="small" component="a" href={`${API_ORIGIN}/api/v1/imports/${imp.id}/download`} target="_blank">
                                                 <Download size={18} />
                                             </IconButton>
                                         </Stack>
@@ -302,4 +303,3 @@ export default function ImportsPage() {
     );
 }
 
-import { Grid2 as Grid } from '@mui/material';
