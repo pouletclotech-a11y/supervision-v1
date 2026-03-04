@@ -1,10 +1,11 @@
 from datetime import datetime
+import os
 from typing import List, Any, Optional
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc
 from app.db.session import get_db
-from app.db.models import ImportLog, Event
+from app.db.models import ImportLog, Event, MonitoringProvider
 from app.schemas.response_models import ImportLogOut, ImportListOut, EventOut, EventListOut
 from app.services.repository import EventRepository
 
@@ -44,6 +45,11 @@ async def read_imports(
     result = await db.execute(stmt)
     logs = result.scalars().all()
     
+    # Fetch Monitoring Providers for thresholds (Phase 5)
+    providers_stmt = select(MonitoringProvider)
+    providers_res = await db.execute(providers_stmt)
+    providers_map = {p.id: p for p in providers_res.scalars().all()}
+
     processed_logs = []
     for log in logs:
         out = ImportLogOut.model_validate(log)
@@ -52,14 +58,17 @@ async def read_imports(
         meta = log.import_metadata or {}
         pdf_support = meta.get("pdf_support")
         
-        # Support both new dict format and legacy string format (for backward compatibility during transition)
-        if pdf_support:
+        # Support both new dict format and legacy string format
+        if log.archive_path_pdf:
+            out.pdf_support_path = f"/api/v1/imports/{log.id}/download?file_type=pdf"
+            out.pdf_support_filename = os.path.basename(log.archive_path_pdf)
+        elif pdf_support:
             out.pdf_support_path = f"/api/v1/imports/{log.id}/download?file_type=pdf"
             if isinstance(pdf_support, dict):
                 out.pdf_support_filename = pdf_support.get("filename")
             else:
                 out.pdf_support_filename = str(pdf_support)
-        elif log.pdf_path: # Fallback if only pdf_path is set but not in metadata
+        elif log.pdf_path:
             out.pdf_support_path = f"/api/v1/imports/{log.id}/download?file_type=pdf"
             out.pdf_support_filename = "Support.pdf"
 
@@ -70,12 +79,108 @@ async def read_imports(
             except (ValueError, TypeError):
                 out.match_pct = 0.0
 
+        # Phase 5: Quality Summary (Lightweight)
+        q_report = log.quality_report or {}
+        p_report = log.pdf_match_report or {}
+        
+        rows_detected = q_report.get("rows_detected", 0)
+        events_created = q_report.get("events_created", 0)
+        
+        # Correction 2: created_ratio semantics
+        if rows_detected > 0:
+            created_ratio = events_created / rows_detected
+        else:
+            created_ratio = 1.0 if events_created == 0 else 0.0
+
+        # Correction 3: quality_status (non-blocking)
+        provider = providers_map.get(log.provider_id)
+        threshold = provider.quality_min_created_ratio if provider else 0.8
+        
+        status = "OK"
+        if created_ratio < threshold:
+            status = "WARN"
+        skipped_reasons = q_report.get("skipped_reasons", {})
+        top_reasons = sorted(skipped_reasons.keys(), key=lambda x: skipped_reasons[x], reverse=True)[:3]
+        
+        # New Ratios Phase 5 (Step Ratios)
+        # Events created are those with TIME. So with_time_ratio on CREATED is 1.0.
+        # But we want it on TOTAL detected if possible? 
+        # User said: with_time / total. 
+        # total here corresponds to events_created + skipped.
+        
+        missing_time = q_report.get("missing_time_count", 0)
+        missing_action = q_report.get("missing_action_count", 0)
+        with_code = q_report.get("with_code_count", 0)
+        
+        with_time_ratio = 1.0
+        with_action_ratio = 1.0
+        with_code_ratio = 0.0
+        
+        if events_created > 0:
+            # Events with time are all those created
+            # If we want a ratio vs total detected: (events_created) / (rows_detected)
+            # which is already created_ratio. 
+            # We'll follow user prompt: with_action_ratio and with_code_ratio are on created events.
+            with_action_ratio = max(0, (events_created - missing_action) / events_created)
+            with_code_ratio = min(1.0, with_code / events_created)
+
+        # Phase 5.5: Refined Quality Status
+        # Priority: with_time_ratio (100% required) and with_action_ratio (90% target)
+        # with_code_ratio is informative only.
+        
+        status = "OK"
+        if with_time_ratio < 1.0:
+            status = "CRITICAL"
+        elif with_action_ratio < 0.9:
+            status = "WARN"
+        
+        # Override with created_ratio if extremely low
+        if created_ratio < 0.5 and status == "OK":
+            status = "WARN"
+        if created_ratio < 0.1:
+            status = "CRITICAL"
+
+        out.quality_summary = ImportQualitySummary(
+            created_ratio=created_ratio,
+            skipped_count=log.duplicates_count + (rows_detected - events_created),
+            top_reasons=list(q_report.get("skipped_reasons", {}).keys()),
+            pdf_match_ratio=p_report.get("match_ratio"),
+            with_time_ratio=with_time_ratio,
+            with_action_ratio=with_action_ratio,
+            with_code_ratio=with_code_ratio,
+            status=status
+        )
+        
+        # Correction 4: Hide full reports in list
+        out.quality_report = None
+        out.pdf_match_report = None
+
         processed_logs.append(out)
 
     return {
         "imports": processed_logs,
         "total": total
     }
+
+@router.get("/{id}/quality-report")
+async def get_quality_report(id: int, db: AsyncSession = Depends(get_db)):
+    """Fetch full quality report JSONB."""
+    stmt = select(ImportLog).where(ImportLog.id == id)
+    result = await db.execute(stmt)
+    log = result.scalar_one_or_none()
+    if not log:
+        raise HTTPException(status_code=404, detail="Import not found")
+    return log.quality_report or {}
+
+@router.get("/{id}/pdf-match-report")
+async def get_pdf_match_report(id: int, db: AsyncSession = Depends(get_db)):
+    """Fetch full PDF match report JSONB."""
+    stmt = select(ImportLog).where(ImportLog.id == id)
+    result = await db.execute(stmt)
+    log = result.scalar_one_or_none()
+    if not log:
+        raise HTTPException(status_code=404, detail="Import not found")
+    return log.pdf_match_report or {}
 
 @router.get("/{id}/events", response_model=EventListOut)
 async def read_import_events(
@@ -179,9 +284,10 @@ async def download_archived_file(
     target_path = log.archive_path
     
     if file_type == 'pdf':
-        if not log.pdf_path:
+        # Priority: 1. archive_path_pdf (New deterministic) 2. pdf_path (Legacy/Worker temporary)
+        target_path = log.archive_path_pdf or log.pdf_path
+        if not target_path:
              raise HTTPException(status_code=404, detail="No linked PDF found for this import")
-        target_path = log.pdf_path
 
     if not target_path or not os.path.exists(target_path):
         raise HTTPException(status_code=404, detail="File not found on server")

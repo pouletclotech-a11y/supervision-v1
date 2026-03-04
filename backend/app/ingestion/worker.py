@@ -4,6 +4,7 @@ import json
 import redis.asyncio as redis
 import os
 import time
+from app.db.redis import get_redis_client
 import hashlib
 import uuid
 from pathlib import Path
@@ -29,6 +30,7 @@ from app.services.archiver import ArchiverService
 from app.services.provider_resolver import ProviderResolver
 from app.services.classification_service import ClassificationService
 from app.services.business_rules import BusinessRuleEngine
+from app.services.pdf_match_service import PdfMatchService
 
 # Phase B1: New Imports
 from app.ingestion.adapters.registry import AdapterRegistry
@@ -59,8 +61,6 @@ provider_resolver = ProviderResolver()
 profile_manager = ProfileManager()
 profile_matcher = ProfileMatcher(profile_manager)
 
-async def get_redis_client():
-    return redis.from_url(f"redis://{settings.POSTGRES_SERVER.replace('db', 'redis')}:6379", encoding="utf-8", decode_responses=True)
 
 
 def detect_file_format(path: Path) -> str:
@@ -199,7 +199,12 @@ async def process_ingestion_item(adapter: BaseAdapter, item: AdapterItem, redis_
             if not matched_profile:
                 # Fallback to old matcher (headers/text) if no explicit profile found
                 headers_probe, text_probe = get_file_probe(file_path)
-                matched_profile, match_report = profile_matcher.match(file_path, headers=headers_probe, text_content=text_probe)
+                matched_profile, match_report = profile_matcher.match(
+                    file_path, 
+                    detected_format=detected_kind, 
+                    headers=headers_probe, 
+                    text_content=text_probe
+                )
             
             if matched_profile is None:
                 logger.warning(f"[INGEST_REJECT] event=profile_not_found file={item.filename} provider={provider_code} kind={detected_kind}")
@@ -392,7 +397,41 @@ async def process_ingestion_item(adapter: BaseAdapter, item: AdapterItem, redis_
                     except Exception as inc_err:
                         logger.error(f"Incident reconstruction failed: {inc_err}")
 
-                # Metrics persistence
+                # PDF Match Logic (Phase 4)
+                pdf_match_report = {}
+                # Look for a companion PDF in the same ingestion item or sibling files
+                # (Assuming adapter might group them or we look in the same directory)
+                pdf_path = None
+                # Basic heuristic: if current is .xls/.xlsx, look for .pdf with same name
+                potential_pdf = file_path.with_suffix('.pdf')
+                if potential_pdf.exists():
+                    pdf_path = potential_pdf
+                
+                if pdf_path and monitoring_provider:
+                    try:
+                        pdf_parser = PdfParser()
+                        pdf_events = pdf_parser.parse(str(pdf_path))
+                        
+                        pdf_matcher = PdfMatchService()
+                        # Pass monitoring_provider converted to dict for config
+                        provider_conf = {
+                            "code": monitoring_provider.code,
+                            "pdf_warning_threshold": monitoring_provider.pdf_warning_threshold,
+                            "pdf_critical_threshold": monitoring_provider.pdf_critical_threshold,
+                            "pdf_ignore_case": monitoring_provider.pdf_ignore_case,
+                            "pdf_ignore_accents": monitoring_provider.pdf_ignore_accents
+                        }
+                        pdf_match_report = pdf_matcher.calculate_match_report(unique_events, pdf_events, provider_conf)
+                        import_log.pdf_match_report = pdf_match_report
+                        logger.info(f"[PDF_MATCH] import_id={import_log.id} ratio={pdf_match_report.get('match_ratio')}")
+                    except Exception as pdf_err:
+                        logger.error(f"PDF matching failed: {pdf_err}")
+                        import_log.pdf_match_report = {"error": str(pdf_err)}
+
+                # Metrics & Quality Report persistence
+                parser_metrics = getattr(parser, 'last_metrics', {})
+                import_log.quality_report = parser_metrics
+                
                 meta = dict(import_log.import_metadata or {})
                 metrics = {
                     "extracted": len(events),
@@ -412,6 +451,15 @@ async def process_ingestion_item(adapter: BaseAdapter, item: AdapterItem, redis_
                 if archive_path:
                     import_log.archive_path = str(archive_path)
                     import_log.archive_status = "ARCHIVED"
+                
+                # Archive PDF companion if exists
+                if pdf_path and pdf_path.exists():
+                    try:
+                        archived_pdf, _ = archiver.archive_file(pdf_path, import_log.created_at)
+                        import_log.archive_path_pdf = str(archived_pdf)
+                        logger.info(f"[ARCHIVE_PDF] import_id={import_log.id} path={archived_pdf}")
+                    except Exception as arch_err:
+                        logger.error(f"Failed to archive PDF companion: {arch_err}")
                 
                 await session.commit()
                 return import_log.id, events
@@ -516,16 +564,44 @@ async def worker_loop():
     registry = AdapterRegistry()
     heartbeat_path = Path("/tmp/worker_heartbeat")
 
+    last_redis_heartbeat = 0
+    parse_times = [] # Keep last 100 parse times for moving average
+
     while True:
         poll_run_id = str(uuid.uuid4())[:8]
-        t0 = time.monotonic()
+        t_cycle_start = time.monotonic()
+        
+        # 1. Update Heartbeat (Redis + File)
+        now = time.time()
+        if now - last_redis_heartbeat > 30:
+            try:
+                heartbeat_data = {
+                    "timestamp": datetime.now().isoformat(),
+                    "worker_id": os.environ.get("HOSTNAME", "default-worker"),
+                    "status": "RUNNING"
+                }
+                # Optional: Include simple metrics in heartbeat
+                if parse_times:
+                    heartbeat_data["avg_parse_time_ms"] = round(sum(parse_times) / len(parse_times), 2)
+                
+                await redis_client.set("supervision:worker:heartbeat", json.dumps(heartbeat_data), ex=90)
+                last_redis_heartbeat = now
+                logger.info(f"[METRIC] heartbeat_updated run_id={poll_run_id}")
+            except Exception as e:
+                logger.error(f"Failed to update Redis heartbeat: {e}")
+
+        # Update Docker healthcheck file
+        heartbeat_path.touch()
+
         logger.info(f"[METRIC] event=poll_cycle_start run_id={poll_run_id}")
 
         try:
             items_by_msg = {} # source_message_id -> list[(adapter, item)]
             orphans = []
+            queue_depth = 0
             
             async for adapter, item in registry.poll_all():
+                queue_depth += 1
                 msg_id = item.source_message_id
                 if msg_id:
                     if msg_id not in items_by_msg:
@@ -533,6 +609,9 @@ async def worker_loop():
                     items_by_msg[msg_id].append((adapter, item))
                 else:
                     orphans.append((adapter, item))
+            
+            # Store queue_depth in Redis for /health
+            await redis_client.set("supervision:worker:queue_depth", queue_depth, ex=300)
             
             # 1. Process Groups (Fusion V1)
             for msg_id, group in items_by_msg.items():
@@ -545,10 +624,15 @@ async def worker_loop():
                 
                 for adapter, item in group:
                     # Logic for grouping: pass existing_import_id if already set
+                    t_parse_start = time.monotonic()
                     import_id, events = await process_ingestion_item(
                         adapter, item, redis_lock, redis_client, poll_run_id=poll_run_id, 
                         existing_import_id=primary_import_id
                     )
+                    t_parse_end = time.monotonic()
+                    parse_ms = (t_parse_end - t_parse_start) * 1000
+                    parse_times.append(parse_ms)
+                    if len(parse_times) > 100: parse_times.pop(0)
                     
                     if import_id:
                         if not primary_import_id:

@@ -96,7 +96,7 @@ class PdfParser(BaseParser):
 
                         if not current_site_code: continue
 
-                        # 2. Detect Event Header
+                        # 2. Detect Event Header (Security Event)
                         match_header = re.match(RE_EVENT_HEADER, line)
                         if match_header:
                             day_label = match_header.group(1).upper()[:3]
@@ -108,25 +108,39 @@ class PdfParser(BaseParser):
                                 ts_naive = datetime.strptime(f"{date_str} {time_str}", "%d/%m/%Y %H:%M:%S")
                                 last_event_date = ts_naive
                                 
-                                # State & Code Extraction from remainder
-                                state = "UNKNOWN"
+                                # Action & Code Extraction
+                                norm_type = "INFO"
+                                severity = "INFO"
                                 alarm_code = None
+                                msg = remainder
                                 
-                                # State mapping
+                                # Priority keywords for SPGO actions
                                 upper_rem = remainder.upper()
-                                if "APPARITION" in upper_rem: state = "APPARITION"
-                                elif "DISPARITION" in upper_rem: state = "DISPARITION"
-                                elif "EXPIRATION" in upper_rem: state = "EXPIRATION"
-                                elif "MISE EN SERVICE" in upper_rem: state = "MISE_EN_SERVICE"
-                                elif "MISE HORS SERVICE" in upper_rem: state = "MISE_HORS_SERVICE"
-
-                                # Code detection (starts with $ or pattern digits-suffix)
-                                match_code = re.search(r'\$([\w-]+)|(\d{5,}-[\w-]+)', remainder)
-                                if match_code:
-                                    alarm_code = match_code.group(0).replace('$', '')
+                                # Split remainder if it looks like "CODE ACTION MESSAGE"
+                                # Pattern: X330 APPARITION ...
+                                parts = remainder.split(' ', 2)
+                                potential_code = parts[0] if len(parts) > 0 else None
+                                potential_action = parts[1] if len(parts) > 1 else None
                                 
-                                # Operator Action detection
-                                is_operator = remainder.startswith("$") or "MODIFICATION DE DOSSIER" in upper_rem
+                                if potential_action and potential_action.upper() in ["APPARITION", "DISPARITION", "RETARD", "ALERTE", "MISE EN SERVICE", "MISE HORS SERVICE", "TEST CYCLIQUE"]:
+                                    alarm_code = potential_code
+                                    norm_type = potential_action.upper()
+                                    msg = parts[2] if len(parts) > 2 else ""
+                                    if norm_type == "APPARITION": severity = "CRITICAL"
+                                elif potential_code and potential_code.upper() in ["APPARITION", "DISPARITION", "RETARD", "ALERTE", "MISE EN SERVICE", "MISE HORS SERVICE", "TEST CYCLIQUE"]:
+                                    # Case where code is missing but action is first
+                                    norm_type = potential_code.upper()
+                                    msg = remainder[len(norm_type):].strip()
+                                    if norm_type == "APPARITION": severity = "CRITICAL"
+                                else:
+                                    # Fallback keywords
+                                    if "APPARITION" in upper_rem: norm_type = "APPARITION"; severity = "CRITICAL"
+                                    elif "DISPARITION" in upper_rem: norm_type = "DISPARITION"
+                                    
+                                    # Try to extract code anyway
+                                    match_code = re.search(r'\$([\w-]+)|([A-Z0-9]{4,})', remainder)
+                                    if match_code:
+                                        alarm_code = match_code.group(0)
 
                                 event = NormalizedEvent(
                                     timestamp=self._normalize_timestamp(ts_naive, source_timezone),
@@ -135,24 +149,20 @@ class PdfParser(BaseParser):
                                     client_name=current_site_name,
                                     secondary_code=current_site_secondary,
                                     weekday_label=day_label,
-                                    event_type="OPERATOR_ACTION" if is_operator else "PDF_EVENT",
-                                    raw_message=remainder,
+                                    event_type=norm_type,
+                                    normalized_type=norm_type,
+                                    raw_message=msg,
                                     raw_code=alarm_code,
-                                    status="ALARM" if state == "APPARITION" else "INFO",
+                                    status=severity,
                                     source_file=file_path,
-                                    tenant_id="default-tenant"
+                                    tenant_id="default"
                                 )
-                                event.metadata = {
-                                    "state": state,
-                                    "raw_line": line,
-                                    "is_operator": is_operator
-                                }
                                 events.append(event)
                             except ValueError:
                                 pass
                             continue
                         
-                        # 3. Detect Sub Event
+                        # 3. Detect Sub Event (Operator Note in SPGO)
                         match_sub = re.match(RE_SUB_EVENT, line)
                         if match_sub and last_event_date:
                             time_str = match_sub.group(1)
@@ -162,25 +172,19 @@ class PdfParser(BaseParser):
                                 t_part = datetime.strptime(time_str, "%H:%M:%S").time()
                                 full_ts = datetime.combine(last_event_date.date(), t_part)
                                 
-                                # State check on sub message too
-                                state = "UNKNOWN"
-                                if "APPARITION" in message.upper(): state = "APPARITION"
-                                elif "DISPARITION" in message.upper(): state = "DISPARITION"
-                                
                                 sub_event = NormalizedEvent(
                                     timestamp=self._normalize_timestamp(full_ts, source_timezone),
                                     site_code=current_site_code,
                                     site_code_raw=current_site_code_raw,
                                     client_name=current_site_name,
                                     secondary_code=current_site_secondary,
-                                    event_type="DETAIL_LOG",
-                                    sub_type="PDF_LOG",
+                                    event_type="OPERATOR_NOTE",
+                                    normalized_type="OPERATOR_NOTE",
                                     raw_message=message,
                                     status="INFO",
                                     source_file=file_path,
-                                    tenant_id="default-tenant"
+                                    tenant_id="default"
                                 )
-                                sub_event.metadata = {"raw_line": line, "state": state}
                                 events.append(sub_event)
                             except ValueError:
                                 pass

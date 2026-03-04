@@ -1,8 +1,8 @@
 profile_id: ypsilon_histo_excel
 name: YPSILON HISTO EXCEL
-priority: 5
+priority: 100
 source_timezone: Europe/Paris
-provider_code: SPGO
+# provider_code: SPGO
 parser_config:
   format: HISTO
 detection:

@@ -3,6 +3,16 @@ from typing import Optional, List
 from enum import Enum
 from pydantic import BaseModel, ConfigDict, Field
 
+class ImportQualitySummary(BaseModel):
+    created_ratio: float
+    skipped_count: int
+    top_reasons: List[str]
+    pdf_match_ratio: Optional[float] = None
+    with_time_ratio: float = 0
+    with_action_ratio: float = 0
+    with_code_ratio: float = 0
+    status: str # OK, WARN, CRIT
+
 class ImportLogOut(BaseModel):
     id: int
     filename: str
@@ -22,6 +32,11 @@ class ImportLogOut(BaseModel):
     pdf_support_path: Optional[str] = None
     pdf_support_filename: Optional[str] = None
     match_pct: Optional[float] = None
+    
+    # Phase 5: Quality Gate
+    quality_summary: Optional[ImportQualitySummary] = None
+    quality_report: Optional[dict] = None
+    pdf_match_report: Optional[dict] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -36,7 +51,7 @@ class TriggeredRuleSummary(BaseModel):
 
 class EventOut(BaseModel):
     id: int
-    timestamp: datetime = Field(..., validation_alias="time")
+    time: datetime
     site_code: Optional[str] = None # Mapped from Site
     client_name: Optional[str] = None
     weekday_label: Optional[str] = None
@@ -44,6 +59,7 @@ class EventOut(BaseModel):
     import_id: Optional[int] = None
     raw_message: str
     raw_code: Optional[str] = None
+    normalized_code: Optional[str] = None
     normalized_type: Optional[str] = None
     sub_type: Optional[str] = None
     severity: Optional[str] = None

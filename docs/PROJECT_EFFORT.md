@@ -3,8 +3,7 @@
 Ce document recense les heures investies dans la conception, le développement et la sécurisation de la plateforme **Supervision-V1**.
 
 ## Résumé
-- **Dernière mise à jour** : 2026-03-02
-- **Total cumulé** : 293 heures
+- **Dernière mise à jour** : 2026-03-03
 
 ---
 
@@ -26,6 +25,36 @@ Ce document recense les heures investies dans la conception, le développement e
 ---
 
 ## 2. Historique des Ajouts
+
+### 2026-03-04 — Phase 6 — SPGO Hardening & PDF Mirroring [+5h]
+- **Status**: DONE (Mar 04, 2026)
+- **Description**: Re-parsing of SPGO XLS/TSV and PDF reports to ensure 100% time coverage and correct classification of Operator Notes/Actions.
+- **Key Contributions**: Strict SPGO indexing (A..F), Time reconstruction for partial timestamps, OCR-ready PDF mirror parsing, and PDF companion linking in DB (`archive_path_pdf`).
+- **Validation**: CI Golden Gate pass (SPGO: 319, CORS: 1832). SQL proof of 0 null-time.
+- **Ops** : Heartbeat Redis worker (30s) + Endpoint `/health` (DB/Redis/Worker check).
+- **Sync Config** : API `/admin/config/export` & `/import` (transactionnel, diff report, dry-run).
+- **Onboarding** : Wizard multi-step (Upload -> Detect -> Preview -> Create).
+- **Garde-fous** : Test de parité config sync + Validation CI Golden Gate.
+
+### 2026-03-03 — Phase 5.5 — Hardening Data Quality (Time/Action/Codes) [+4h]
+- **Status**: DONE (Mar 03, 2026)
+- **Description**: Fix Time pipeline, Action vs Severity mapping, robust XLSX code extraction (keeping symbols), block context inheritance, and Quality KPIs for Action/Code ratios.
+- **Key Contributions**: Parsers (XLS/XLSX), API (ImportQualitySummary), UI (Data Validation + Quality Dashboard), CI (Golden Gate asserts).
+
+### 2026-03-03 — Phase 5 — Quality & Observability Gate [+8h]
+- **Qualité** : Migration 22 pour seuils paramétrables et alerting dynamique.
+- **Backend** : API lightweight pour le summary d'import + endpoints de rapports JSONB.
+- **Frontend** : Dashboard `admin/quality-report` avec KPIs, badges de statut et drill-down.
+- **CI Gate** : Automatisation du rejeu Golden (SPGO=157 / CORS=1709) sans IDs en dur.
+- **DevOps** : Scripts robustes sous `backend/ci/` pour validation déterministe.
+
+### 2026-03-03 — Phase 4 — Hardening Ingestion & Data Validation Fix [+12h]
+- **Infrastructure** : Mise en place de `archive_path_pdf` (Migration 21) et matching strict par `format_kind`.
+- **Backend Fix** : Alignement du champ `time` dans `EventOut` pour corriger la régression d'affichage UI.
+- **Parsers** : Support de l'héritage client 100% (SPGO) et extraction de codes CORS via regex (`$` et patterns numériques).
+- **Frontend** : Reset automatique de la pagination et ajout d'un bouton "Reset Filters" dans Data Validation.
+- **Validation** : Rejeu complet des Golden Files (646: 157 evts, 1627: 1709 evts). Proximité 100% avec les spécifications.
+- **Documentation** : Création de `OPERATION_GUIDE.md` et mise à jour des walkthroughs techniques.
 
 ### 2026-03-02 — Phase 4 — UI Fix (Import Page) & Replay Hardening [+6h]
 - **Frontend** : Correction du crash "Application error" (MUI `Unstable_Grid2` + `API_ORIGIN`).
@@ -231,3 +260,4 @@ Les estimations basées sur la complexité technique et le volume de code produi
 | **Documentation** | Walkthrough, operation guide, metrics | 2 | 2 | ✅ |
 
 **Total Phase 3** : 23h (Est.) / 22h (Réel)
+- **Total cumulé** : 332 heures

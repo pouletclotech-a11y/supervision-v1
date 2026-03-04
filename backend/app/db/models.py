@@ -52,6 +52,7 @@ class Event(Base):
     raw_message: Mapped[Optional[str]] = mapped_column(Text)
     normalized_message: Mapped[Optional[str]] = mapped_column(Text, index=True)
     raw_code: Mapped[Optional[str]] = mapped_column(String(50))
+    normalized_code: Mapped[Optional[str]] = mapped_column(String(50), index=True)
     normalized_type: Mapped[Optional[str]] = mapped_column(String(100), index=True)
     sub_type: Mapped[Optional[str]] = mapped_column(String(50))
     severity: Mapped[Optional[str]] = mapped_column(String(20))
@@ -86,14 +87,17 @@ class ImportLog(Base):
     adapter_name: Mapped[Optional[str]] = mapped_column(String(50), index=True)
     error_message: Mapped[Optional[str]] = mapped_column(Text)
     
-    # Traceability (Phase 3)
+    # Traceability (Phase 3 & 4)
     import_metadata: Mapped[Optional[dict]] = mapped_column(JSONB, default={})
+    quality_report: Mapped[Optional[dict]] = mapped_column(JSONB, default={})
+    pdf_match_report: Mapped[Optional[dict]] = mapped_column(JSONB, default={})
     raw_payload: Mapped[Optional[str]] = mapped_column(Text)
     
     # Source & Archive
     archive_path: Mapped[Optional[str]] = mapped_column(Text)
     archived_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     archive_status: Mapped[str] = mapped_column(String(20), default='PENDING')
+    archive_path_pdf: Mapped[Optional[str]] = mapped_column(Text)
     
     # PDF Linking
     pdf_path: Mapped[Optional[str]] = mapped_column(Text)
@@ -254,6 +258,16 @@ class MonitoringProvider(Base):
     accepted_attachment_types: Mapped[dict] = mapped_column(JSONB, default=["pdf", "xls", "xlsx"])
     email_match_keyword: Mapped[Optional[str]] = mapped_column(String(255))
     expected_interval_minutes: Mapped[Optional[int]] = mapped_column(Integer)
+    
+    # Phase 4: PDF Soft-Match Config
+    pdf_warning_threshold: Mapped[float] = mapped_column(Float, default=0.9)
+    pdf_critical_threshold: Mapped[float] = mapped_column(Float, default=0.7)
+    pdf_ignore_case: Mapped[bool] = mapped_column(Boolean, default=True)
+    pdf_ignore_accents: Mapped[bool] = mapped_column(Boolean, default=True)
+    
+    # Phase 5: Quality Gate Config
+    quality_min_created_ratio: Mapped[float] = mapped_column(Float, default=0.8)
+    quality_alert_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

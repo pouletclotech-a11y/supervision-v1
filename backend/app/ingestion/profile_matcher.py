@@ -11,7 +11,7 @@ class ProfileMatcher:
     def __init__(self, manager: ProfileManager):
         self.manager = manager
 
-    def match(self, file_path: str, headers: List[str] = None, text_content: str = None) -> Tuple[Optional[IngestionProfile], dict]:
+    def match(self, file_path: str, detected_format: str = None, headers: List[str] = None, text_content: str = None) -> Tuple[Optional[IngestionProfile], dict]:
         """
         Matches a file against loaded profiles using multiple criteria.
         Returns Tuple(Best Profile or None, Match Report).
@@ -23,17 +23,24 @@ class ProfileMatcher:
         candidates: List[Tuple[float, IngestionProfile]] = []
         match_report = {
             "filename": filename,
+            "detected_format": detected_format,
             "candidates": [],
             "best_profile": None,
             "best_score": 0.0,
             "threshold_met": False
         }
 
-        logger.info(f"--- START MATCHING for {filename} ---")
+        logger.info(f"--- START MATCHING for {filename} (Detected Format: {detected_format}) ---")
 
         for profile in self.manager.list_profiles():
+            # 0. Hard Filter by format_kind
+            if detected_format and profile.format_kind != detected_format:
+                logger.info(f"  Skip {profile.profile_id}: FORMAT_MISMATCH ({profile.format_kind} != {detected_format})")
+                continue
+
             # 1. Hard Filter by extension
             if profile.detection.extensions and ext not in profile.detection.extensions:
+                logger.debug(f"  Skip {profile.profile_id}: EXTENSION_MISMATCH ({ext} not in {profile.detection.extensions})")
                 continue
             
             # Base score if extension matches

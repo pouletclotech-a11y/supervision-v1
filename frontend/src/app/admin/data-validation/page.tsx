@@ -93,7 +93,7 @@ function DataValidationInner() {
 
     // Pagination State
     const [paginationModel, setPaginationModel] = useState({ page: 0, pageSize: 100 });
-    const [sortModel, setSortModel] = useState<any[]>([{ field: 'time', sort: 'asc' }]);
+    const [sortModel, setSortModel] = useState<any[]>([{ field: 'time', sort: 'desc' }]);
     const [totalEvents, setTotalEvents] = useState(0);
 
     const [unmatchedOnly, setUnmatchedOnly] = useState(false);
@@ -384,10 +384,17 @@ function DataValidationInner() {
     const eventColumns: GridColDef[] = useMemo(() => [
         { field: 'id', headerName: 'ID', width: 80 },
         {
+            field: 'time', headerName: 'Date / Heure', width: 180,
+            renderCell: (params: GridRenderCellParams) => (
+                <Typography sx={{ fontSize: 11, fontWeight: 'medium' }}>
+                    {params.value ? new Date(params.value).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '—'}
+                </Typography>
+            )
+        },
+        {
             field: 'weekday_label', headerName: 'Jour', width: 70,
             renderCell: (params: GridRenderCellParams) => <Typography sx={{ fontSize: 11, fontWeight: 'bold', color: 'text.secondary' }}>{params.value}</Typography>
         },
-        { field: 'time', headerName: 'Time', width: 170, valueFormatter: (params: GridValueFormatterParams) => params.value ? new Date(params.value).toLocaleString() : '' },
         {
             field: 'site_code', headerName: 'Site', width: 90,
             renderCell: (params: GridRenderCellParams) => (
@@ -411,14 +418,15 @@ function DataValidationInner() {
             renderCell: (params: GridRenderCellParams) => <Typography variant="body2" sx={{ fontSize: 12, color: 'text.primary' }}>{params.value}</Typography>
         },
         {
-            field: 'severity', headerName: 'Severity', width: 100,
+            field: 'severity', headerName: 'Status', width: 100,
             renderCell: (params: GridRenderCellParams) => {
-                const s = (params.value || 'INFO').toUpperCase() as string;
+                const s = (params.value || 'INFO').toUpperCase();
                 let color: "default" | "primary" | "secondary" | "error" | "info" | "success" | "warning" = "default";
-                if (s === 'CRITICAL' || s === 'ALARM') color = "error";
-                else if (s === 'WARNING') color = "warning";
-                else if (s === 'SUCCESS') color = "success";
-                return <Chip label={s} color={color} size="small" variant="outlined" sx={{ height: 18, fontSize: 9 }} />;
+                if (s === 'CRITICAL' || s === 'ALARM' || s === 'ALERTE') color = "error";
+                else if (s === 'WARNING' || s === 'RETARD') color = "warning";
+                else if (s === 'SUCCESS' || s === 'NORMAL') color = "success";
+                else color = "info";
+                return <Chip label={s} color={color} size="small" variant="outlined" sx={{ height: 18, fontSize: 9, fontWeight: 'bold' }} />;
             }
         },
         {
@@ -662,7 +670,10 @@ function DataValidationInner() {
                             onPaginationModelChange={setImportPaginationModel}
                             rowHeight={40}
                             density="compact"
-                            onRowClick={(params) => setSelectedImportId(params.row.id)}
+                            onRowClick={(params) => {
+                                setSelectedImportId(params.row.id);
+                                setPaginationModel(prev => ({ ...prev, page: 0 }));
+                            }}
                             disableRowSelectionOnClick
                             columnVisibilityModel={importColumnVisibility}
                             onColumnVisibilityModelChange={handleImportVisibilityChange}
@@ -784,6 +795,22 @@ function DataValidationInner() {
                             >
                                 Rule Tester
                             </Button>
+
+                            <IconButton
+                                onClick={() => {
+                                    setRuleFilter('');
+                                    setActionFilter('');
+                                    setCodeFilter('');
+                                    setUnmatchedOnly(false);
+                                    setCriticalOnly(false);
+                                    setPaginationModel(prev => ({ ...prev, page: 0 }));
+                                }}
+                                title="Reset all event filters"
+                                size="small"
+                                sx={{ color: 'text.secondary' }}
+                            >
+                                <XCircle size={16} />
+                            </IconButton>
 
                             <IconButton onClick={() => selectedImportId && fetchEvents(selectedImportId)} disabled={!selectedImportId} size="small" sx={{ color: 'text.secondary' }}>
                                 <RefreshCw size={16} />

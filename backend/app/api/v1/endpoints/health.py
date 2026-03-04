@@ -3,8 +3,11 @@ from typing import List, Any, Optional, Dict
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.session import get_db
+from app.db.redis import get_redis_client
 from app.services.repository import EventRepository
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+import json
+import time
 
 router = APIRouter()
 
@@ -108,3 +111,74 @@ async def get_ingestion_summary(
         "summary": processed_summary,
         "daily_receipt": daily_receipt,
     }
+# --- Phase 6: System Health ---
+
+class SystemComponentStatus(BaseModel):
+    status: str # OK, WARN, CRIT
+    details: Optional[str] = None
+    age_seconds: Optional[float] = None
+
+class SystemHealthSchema(BaseModel):
+    status: str
+    database: SystemComponentStatus
+    redis: SystemComponentStatus
+    worker: SystemComponentStatus
+    timestamp: datetime = Field(default_factory=datetime.now)
+
+@router.get("", response_model=SystemHealthSchema)
+async def get_system_health(
+    db: AsyncSession = Depends(get_db)
+) -> Any:
+    """
+    Check overall system health: Database, Redis, and Ingestion Worker.
+    """
+    health = {
+        "status": "OK",
+        "database": {"status": "OK"},
+        "redis": {"status": "OK"},
+        "worker": {"status": "OK"}
+    }
+    
+    # 1. Database Check
+    try:
+        from sqlalchemy import text
+        await db.execute(text("SELECT 1"))
+    except Exception as e:
+        health["database"] = {"status": "CRIT", "details": str(e)}
+        health["status"] = "CRIT"
+        
+    # 2. Redis Check
+    redis_client = None
+    try:
+        redis_client = await get_redis_client()
+        await redis_client.ping()
+    except Exception as e:
+        health["redis"] = {"status": "CRIT", "details": str(e)}
+        health["status"] = "CRIT"
+        
+    # 3. Worker Heartbeat Check
+    if redis_client:
+        try:
+            hb_json = await redis_client.get("supervision:worker:heartbeat")
+            if hb_json:
+                hb_data = json.loads(hb_json)
+                hb_ts = datetime.fromisoformat(hb_data["timestamp"])
+                age = (datetime.now() - hb_ts).total_seconds()
+                
+                health["worker"]["age_seconds"] = age
+                if age > 120:
+                    health["worker"]["status"] = "CRIT"
+                    health["worker"]["details"] = f"Heartbeat is too old: {age}s"
+                    if health["status"] != "CRIT": health["status"] = "CRIT"
+                elif age > 60:
+                    health["worker"]["status"] = "WARN"
+                    health["worker"]["details"] = f"Heartbeat is stale: {age}s"
+                    if health["status"] == "OK": health["status"] = "WARN"
+            else:
+                health["worker"] = {"status": "CRIT", "details": "No heartbeat found in Redis"}
+                health["status"] = "CRIT"
+        except Exception as e:
+            health["worker"] = {"status": "CRIT", "details": f"Error checking heartbeat: {e}"}
+            health["status"] = "CRIT"
+            
+    return health

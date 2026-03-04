@@ -162,3 +162,35 @@ async def replay_last_48h(
         "errors_count": len(errors),
         "replay_errors": errors
     }
+
+@router.get("/{import_id}/quality-report")
+async def get_quality_report(
+    import_id: int,
+    db: AsyncSession = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_user)
+):
+    """
+    Returns the data quality report for a specific import.
+    """
+    result = await db.execute(select(ImportLog).where(ImportLog.id == import_id))
+    import_log = result.scalars().first()
+    if not import_log:
+        raise HTTPException(status_code=404, detail="Import not found")
+    
+    return import_log.quality_report or {}
+
+@router.get("/{import_id}/pdf-match-report")
+async def get_pdf_match_report(
+    import_id: int,
+    db: AsyncSession = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_user)
+):
+    """
+    Returns the PDF matching report for a specific import.
+    """
+    result = await db.execute(select(ImportLog).where(ImportLog.id == import_id))
+    import_log = result.scalars().first()
+    if not import_log:
+        raise HTTPException(status_code=404, detail="Import not found")
+    
+    return import_log.pdf_match_report or {}

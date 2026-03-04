@@ -369,6 +369,7 @@ class EventRepository:
                 raw_message=e.raw_message,
                 normalized_message=e.normalized_message,
                 raw_code=e.raw_code,
+                normalized_code=e.normalized_code,
                 normalized_type=e.normalized_type or e.event_type, # Prefer normalized
                 sub_type=e.sub_type,
                 severity=e.status, 

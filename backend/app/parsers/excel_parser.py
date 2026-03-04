@@ -22,6 +22,15 @@ class ExcelParser(BaseParser):
     - Col F: details
     """
 
+    def _normalize_code(self, raw: Optional[str]) -> Optional[str]:
+        if not raw:
+            return None
+        raw = str(raw).strip()
+        # Remove one leading $
+        if raw.startswith('$'):
+            raw = raw[1:]
+        return raw.strip().upper()
+
     def supported_extensions(self) -> List[str]:
         return ['.xlsx']
 
@@ -32,6 +41,28 @@ class ExcelParser(BaseParser):
         logger.info(f" [XLSX_PARSE_START] {file_path}")
         events = []
         
+        # Quality report metrics
+        metrics = {
+            "rows_detected": 0,
+            "events_created": 0,
+            "events_skipped_count": 0,
+            "missing_time_count": 0,
+            "missing_action_count": 0,
+            "with_code_count": 0,
+            "site_blocks_detected": 0,
+            "skipped_reasons": {},
+            "skipped_samples": []
+        }
+
+        def record_skip(reason, row_idx, sample=None):
+            metrics["events_skipped_count"] += 1
+            metrics["skipped_reasons"][reason] = metrics["skipped_reasons"].get(reason, 0) + 1
+            if len(metrics["skipped_samples"]) < 20:
+                # Convert row sample to strings for JSON serializability
+                sample_str = [str(s) for s in sample] if sample is not None else None
+                metrics["skipped_samples"].append({"row": row_idx, "reason": reason, "data": sample_str})
+            logger.info(f"[ROW_SKIPPED][{reason}] row={row_idx}")
+
         mapping_raw = parser_config.get("mapping", []) if parser_config else []
         action_config = parser_config.get("action_config", {}) if parser_config else {}
         
@@ -46,9 +77,12 @@ class ExcelParser(BaseParser):
         else:
             mapping = mapping_raw
         
+        logger.info(f"Final mapping dict: {mapping}")
+        
         try:
             # Explicitly use openpyxl for .xlsx
             df = pd.read_excel(file_path, header=None, engine='openpyxl')
+            metrics["rows_detected"] = len(df)
             
             # Diagnostic Log: Raw sample content
             if not df.empty:
@@ -73,92 +107,201 @@ class ExcelParser(BaseParser):
 
                 row_idx = idx + 1
                 
-                # Zéro Heuristique: If mapping is present, use it
+                # Ignore Row 1 (Header/MetaData)
+                if row_idx == 1:
+                    continue
                 if mapping:
                     # Helper to get by index or letter
                     def get_val(key):
                         idx_val = mapping.get(key)
                         if idx_val is None: return None
-                        if isinstance(idx_val, str) and len(idx_val) == 1:
-                            idx = ord(idx_val.upper()) - ord('A')
-                        else:
-                            idx = int(idx_val)
-                        return row[idx] if idx < len(row) else ""
+                        try:
+                            if isinstance(idx_val, str) and len(idx_val) == 1 and idx_val.isalpha():
+                                idx = ord(idx_val.upper()) - ord('A')
+                            else:
+                                idx = int(idx_val)
+                            return row[idx] if idx < len(row) else ""
+                        except Exception as e: 
+                            logger.error(f"get_val error for {key}: {e}")
+                            return ""
 
                     # Site code logic (Propagation if empty)
                     current_site = str(get_val("site_code")).strip()
-                    if current_site:
+                    if current_site and current_site.lower() != 'nan' and current_site != "":
+                        # CORS / YPSILON specific: Strip leading zeros for consistency with PDF
                         ctx_site_code_raw = current_site
-                        ctx_site_code = normalize_site_code(current_site)
+                        # normalize_site_code_full handles digit extraction + leading zero strip
+                        ctx_site_code, _ = normalize_site_code_full(current_site)
+                        metrics["site_blocks_detected"] += 1
                     
-                    if not ctx_site_code: continue
+                    if not ctx_site_code:
+                        # Only skip if we really have no context and this isn't a header-only row
+                        # Check all possible time keys
+                        if get_val("timestamp") or get_val("date_time") or get_val("date"):
+                            record_skip("NO_SITE_CONTEXT", row_idx, row)
+                        continue
 
-                    # Date/Time
-                    raw_dt = get_val("date_time")
-                    if not raw_dt:
-                        d = get_val("date")
-                        t = get_val("time")
-                        if d and t: raw_dt = f"{d} {t}"
+                    # Client name logic (Propagation if empty) - CORS Specific
+                    current_client = str(get_val("client_name") or "").strip()
+                    if current_client and current_client.lower() != 'nan' and current_client != "":
+                        ctx_client_name = current_client
+                        # Also capture address if possible for context
+                        # Col C = index 2
+                        if len(row) > 2 and row[2] and str(row[2]).lower() != 'nan':
+                            ctx_address = str(row[2]).strip()
+
+                    # 2. Date/Time (Priority: Col G index 6 for CORS Security)
+                    # Col G is normally index 6, Col J is normally index 9
+                    raw_dt = get_val("timestamp") or get_val("date_time")
+                    is_operator_action = False
                     
-                    if not raw_dt: continue
+                    if not raw_dt or str(raw_dt).lower() == 'nan':
+                        # Try Operator Action: Col J (index 9)
+                        op_dt = row[9] if len(row) > 9 else None
+                        if op_dt and str(op_dt).lower() != 'nan' and str(op_dt).strip() != "":
+                            raw_dt = op_dt
+                            is_operator_action = True
+                    
+                    if not raw_dt or str(raw_dt).lower() == 'nan':
+                        metrics["missing_time_count"] += 1
+                        record_skip("MISSING_DATE_TIME", row_idx, row)
+                        continue
                     
                     # Parse Date (Robust)
+                    dt = None
                     try:
                         if isinstance(raw_dt, datetime):
                             dt = raw_dt
                         else:
-                            dt = None
-                            for fmt in ["%d/%m/%Y %H:%M:%S", "%Y-%m-%d %H:%M:%S"]:
+                            for fmt in ["%d/%m/%Y %H:%M:%S", "%Y-%m-%d %H:%M:%S", "%d/%m/%Y %H:%M"]:
                                 try:
-                                    dt = datetime.strptime(str(raw_dt), fmt)
+                                    dt = datetime.strptime(str(raw_dt).strip(), fmt)
                                     break
                                 except: continue
-                            if not dt: continue
-                    except: continue
+                    except: pass
 
-                    # Msg/Code
-                    msg = str(get_val("message") or "")
-                    code = str(get_val("raw_code") or "")
+                    if not dt:
+                        record_skip("DATE_PARSE_ERROR", row_idx, str(raw_dt))
+                        continue
 
-                    # Action
-                    action = "INFO"
+                    # Msg / Code / Action (Support raw_message/raw_code as priority)
+                    msg = str(get_val("raw_message") or get_val("message") or "")
+                    code = str(get_val("raw_code") or get_val("code") or "")
+                    
+                    # Robust Code Extraction from Message if empty (e.g. CORS standard)
+                    if (not code or code.lower() == 'nan' or code == "") and msg:
+                        # Pattern A: "1234  MESSAGE..." (Supervision Start)
+                        match_code = re.match(r'^(\d{2,6})\s+', msg)
+                        if match_code:
+                            code = match_code.group(1)
+                        else:
+                            # Pattern B: "... $CODE" (Inside message)
+                            match_code_dollar = re.search(r'\$([^\s,\t;()[\]]+)', msg)
+                            if match_code_dollar:
+                                code = "$" + match_code_dollar.group(1)
+                            else:
+                                # Pattern C: "MISE EN SERVICE 0003" (4 digits)
+                                match_code_digits = re.search(r'\b(\d{4})\b', msg)
+                                if match_code_digits:
+                                    code = match_code_digits.group(1)
+                    
+                    # If Operator Action, use Col M (index 12) for detail text
+                    if is_operator_action:
+                        msg = row[12] if len(row) > 12 else msg
+                        action = "OPERATOR_ACTION"
+                    else:
+                        action = get_val("action")
+
                     mode = action_config.get("mode", "NONE")
                     if mode == "COLUMN":
-                        action = str(get_val("action") or "INFO")
+                        if not action:
+                            action = "INFO" # Fallback if col mapped but empty
                     elif mode == "REGEX_DERIVE":
                         source = msg if action_config.get("source_field") == "message" else code
+                        action = None
                         for reg in action_config.get("regex_app", []):
                             if re.search(reg, source, re.IGNORECASE):
                                 action = "APPARITION"; break
-                        if action == "INFO":
+                        if not action:
                             for reg in action_config.get("regex_dis", []):
                                 if re.search(reg, source, re.IGNORECASE):
                                     action = "DISPARITION"; break
+                    
+                    if not action or str(action).lower() == 'nan' or action == "":
+                        # Smart derivative if empty
+                        action = "INFO"
+                        m_upper = msg.upper()
+                        if "APPARITION" in m_upper or "ALARM" in m_upper or "INTRUSION" in m_upper: action = "APPARITION"
+                        elif "DISPARITION" in m_upper or "RETARD" in m_upper: action = "DISPARITION"
+                        elif "MISE EN SERVICE" in m_upper: action = "MISE EN SERVICE"
+                        elif "MISE HORS SERVICE" in m_upper: action = "MISE HORS SERVICE"
+                        elif "TEST CYCLIQUE" in m_upper: action = "TEST CYCLIQUE"
+
+                    # Smart code fallback if empty
+                    if (not code or code.lower() == 'nan' or code == "") and msg:
+                        # Pattern B: "... $CODE" (Inside message)
+                        match_code_dollar = re.search(r'\$([^\s,\t;()[\]]+)', msg)
+                        if match_code_dollar:
+                            code = "$" + match_code_dollar.group(1)
+                        else:
+                            # Pattern C: "MISE EN SERVICE 0003" (4 digits)
+                            match_code_digits = re.search(r'\b(\d{4})\b', msg)
+                            if match_code_digits:
+                                code = match_code_digits.group(1)
+
+                    # Business Logic mapping
+                    # Severity/Status: INFO, WARN, CRITICAL
+                    # NormalizedType: APPARITION, DISPARITION, ...
+                    
+                    if is_operator_action:
+                        norm_type = "OPERATOR_ACTION"
+                        severity = "INFO"
+                    elif action in ["APPARITION", "DISPARITION", "ALARM", "MISE EN SERVICE", "MISE HORS SERVICE", "TEST CYCLIQUE", "RETARD", "ALERTE"]:
+                        norm_type = action
+                        if action == "ALARM": severity = "CRITICAL"
+                        else: severity = "INFO"
+                    else:
+                        severity = action or "INFO"
+                    
+                    if norm_type == "GENERIC":
+                        metrics["missing_action_count"] += 1
+
+                    n_code = self._normalize_code(code)
+                    if n_code:
+                        metrics["with_code_count"] += 1
 
                     evt = NormalizedEvent(
                         timestamp=dt,
                         site_code=ctx_site_code,
                         site_code_raw=ctx_site_code_raw,
-                        event_type="GENERIC",
+                        client_name=ctx_client_name,
+                        event_type=norm_type,
+                        normalized_type=norm_type,
                         raw_message=msg,
                         raw_code=code,
-                        status=action,
+                        normalized_code=n_code,
+                        status=severity,
                         source_file=file_path,
                         row_index=row_idx,
-                        raw_data=json.dumps(row),
+                        raw_data=json.dumps([str(x) for x in row]),
                         tenant_id="default"
                     )
                     events.append(evt)
+                    metrics["events_created"] += 1
                 else:
                     # Backward compatibility for existing logic if mapping empty (Phase transition)
                     try:
                         processed = self._process_row(row, row_idx, file_path, ctx_site_code, ctx_site_code_raw, ctx_client_name, ctx_day, ctx_date, False, source_timezone)
                         if processed:
                             evt, ctx_site_code, ctx_site_code_raw, ctx_client_name, ctx_day, ctx_date = processed
-                            if evt: events.append(evt)
-                    except: pass
+                            if evt: 
+                                events.append(evt)
+                                metrics["events_created"] += 1
+                    except: 
+                        record_skip("LEGACY_PARSE_ERROR", row_idx, row)
             
-            logger.info(f" [XLSX_EVENTS_CREATED] count={len(events)}")
+            logger.info(f" [XLSX_EVENTS_DONE] count={len(events)} metrics={metrics}")
+            self.last_metrics = metrics
             
         except Exception as e:
             logger.error(f" [XLSX_FATAL_ERROR] file={file_path}: {e}")

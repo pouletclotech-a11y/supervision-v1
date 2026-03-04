@@ -21,6 +21,7 @@ class NormalizedEvent(BaseModel):
     raw_message: str = Field(..., description="Original log message")
     normalized_message: Optional[str] = Field(None, description="Normalized version for keyword matching")
     raw_code: Optional[str] = None
+    normalized_code: Optional[str] = None
     
     status: Optional[str] = Field(None, description="Severity or Status (ALARM, RESTORE, INFO)")
     
