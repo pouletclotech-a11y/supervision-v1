@@ -1,6 +1,7 @@
 import re
 import csv
 import logging
+import pytz
 from typing import List, Optional
 from datetime import datetime
 from app.parsers.base import BaseParser
@@ -27,6 +28,20 @@ class TsvParser(BaseParser):
 
     def supported_extensions(self) -> List[str]:
         return ['.xls', '.tsv']
+
+    def _normalize_timestamp(self, ts: datetime, source_timezone: str) -> datetime:
+        """
+        Converts a naive or local datetime to timezone-aware UTC.
+        """
+        if ts.tzinfo is not None:
+            return ts.astimezone(pytz.UTC)
+        
+        try:
+            local_tz = pytz.timezone(source_timezone)
+            local_dt = local_tz.localize(ts)
+            return local_dt.astimezone(pytz.UTC)
+        except Exception:
+            return ts
 
     def parse(self, file_path: str, source_timezone: str = "UTC", parser_config: dict = None) -> List[NormalizedEvent]:
         logger.info(f"[TSV_PARSE_START] file={file_path}")
@@ -214,7 +229,7 @@ class TsvParser(BaseParser):
                     metrics["with_code_count"] += 1
 
                 evt = NormalizedEvent(
-                    timestamp=dt,
+                    timestamp=self._normalize_timestamp(dt, source_timezone),
                     site_code=ctx_site_code,
                     site_code_raw=ctx_site_code_raw,
                     client_name=ctx_client_name,

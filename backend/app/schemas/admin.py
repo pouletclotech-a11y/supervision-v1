@@ -64,3 +64,12 @@ class AdminActionSummary(BaseModel):
     action: str
     target_id: Optional[str]
     timestamp: datetime
+
+class TestIngestResultOut(BaseModel):
+    import_id: int
+    security_count: int
+    operator_count: int
+    total_count: int
+    time_null: int
+    pdf_match_ratio: float
+    status: str
