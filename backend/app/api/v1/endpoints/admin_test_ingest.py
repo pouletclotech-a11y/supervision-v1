@@ -6,10 +6,10 @@ from pathlib import Path
 from typing import Any, Optional
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, delete
+from sqlalchemy import select
 
 from app.auth import deps
-from app.db.models import User, ImportLog, MonitoringProvider, Event
+from app.db.models import User, ImportLog, MonitoringProvider
 from app.schemas.admin import TestIngestResultOut
 from app.parsers.tsv_parser import TsvParser as SpgoTsvParser
 from app.parsers.pdf_parser import PdfParser as SpgoPdfParser
@@ -45,7 +45,7 @@ async def admin_test_ingest(
     Manually trigger a test ingestion for a specific provider.
     Saves files, parses them, and returns counts + match report.
     """
-    # 1. Validation
+    # 1. Validation signatures
     validate_file(excel_file, ALLOWED_EXTENSIONS_EXCEL)
     if pdf_file:
         validate_file(pdf_file, ALLOWED_EXTENSIONS_PDF)
@@ -59,20 +59,29 @@ async def admin_test_ingest(
     # 3. Create temp directory
     TEST_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     
-    excel_path = TEST_UPLOAD_DIR / f"test_{tempfile.mktemp(dir='')}_{excel_file.filename}"
+    excel_path = None
     pdf_path = None
-    if pdf_file:
-        pdf_path = TEST_UPLOAD_DIR / f"test_{tempfile.mktemp(dir='')}_{pdf_file.filename}"
 
     try:
-        # Save Excel
-        with excel_path.open("wb") as buffer:
-            shutil.copyfileobj(excel_file.file, buffer)
+        # Read and check size for Excel
+        content_excel = await excel_file.read()
+        if len(content_excel) > MAX_FILE_SIZE:
+            raise HTTPException(status_code=400, detail=f"Excel file too large (> {MAX_FILE_SIZE/(1024*1024)}MB)")
         
-        # Save PDF
-        if pdf_path:
-            with pdf_path.open("wb") as buffer:
-                shutil.copyfileobj(pdf_file.file, buffer)
+        # Save Excel securely
+        with tempfile.NamedTemporaryFile(delete=False, dir=TEST_UPLOAD_DIR, suffix=Path(excel_file.filename).suffix) as tmp_excel:
+            tmp_excel.write(content_excel)
+            excel_path = Path(tmp_excel.name)
+
+        # Handle PDF if present
+        if pdf_file:
+            content_pdf = await pdf_file.read()
+            if len(content_pdf) > MAX_FILE_SIZE:
+                raise HTTPException(status_code=400, detail=f"PDF file too large (> {MAX_FILE_SIZE/(1024*1024)}MB)")
+            
+            with tempfile.NamedTemporaryFile(delete=False, dir=TEST_UPLOAD_DIR, suffix=Path(pdf_file.filename).suffix) as tmp_pdf:
+                tmp_pdf.write(content_pdf)
+                pdf_path = Path(tmp_pdf.name)
 
         # 4. Create ImportLog
         imp = ImportLog(
@@ -102,8 +111,6 @@ async def admin_test_ingest(
                 pdf_parser = SpgoPdfParser()
                 pdf_events = pdf_parser.parse(str(pdf_path), source_timezone="Europe/Paris")
         else:
-            # Fallback or generic for CORS (to be expanded if needed)
-            # For now, let's keep it minimal for SPGO as requested
             raise HTTPException(status_code=400, detail="Only SPGO is currently supported for strict test ingestion")
 
         # 6. Store Data
@@ -131,7 +138,6 @@ async def admin_test_ingest(
         await db.commit()
 
         # 8. Result Summary
-        # Types: security vs operator
         counts = {"security": 0, "operator": 0}
         for e in excel_events:
             if e.normalized_type == "OPERATOR_NOTE":
@@ -142,7 +148,6 @@ async def admin_test_ingest(
         time_null = sum(1 for e in db_evts if e.time is None)
         ratio = match_report.get('match_ratio', 0.0)
 
-        # Strict Baseline Check
         res_status = "SUCCESS"
         if strict_baseline:
             if counts["security"] != 157 or counts["operator"] != 162 or time_null > 0:
@@ -159,8 +164,9 @@ async def admin_test_ingest(
         )
 
     except Exception as e:
+        await db.rollback()
         logger.error(f"Test ingestion failed: {e}")
         # Cleanup on failure
-        if excel_path.exists(): excel_path.unlink()
+        if excel_path and excel_path.exists(): excel_path.unlink()
         if pdf_path and pdf_path.exists(): pdf_path.unlink()
         raise HTTPException(status_code=500, detail=f"Ingestion failed: {str(e)}")
