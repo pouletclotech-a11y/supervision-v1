@@ -54,8 +54,15 @@ class IngestionProfile(BaseModel):
     filename_regex: Optional[str] = Field(None, description="Regex optionnelle pour filtrer par nom de fichier")
 
     mapping: List[MappingRule] = Field(default_factory=list)
-    extraction_rules: Dict[str, str] = Field(default_factory=dict, description="Regex nommées pour extraction de texte")
-    normalization: List[NormalizationRule] = Field(default_factory=list)
+    parser_config: Dict[str, Any] = Field(default_factory=dict, description="Configuration spécifique au parser")
+    extraction_rules: Dict[str, Any] = Field(default_factory=dict, description="Regex nommées pour extraction de texte")
+    normalization: Dict[str, Any] = Field(default_factory=dict)
+
+    @validator("extraction_rules", "normalization", pre=True)
+    def coerce_empty_list_to_dict(cls, v):
+        if v is None or isinstance(v, list):
+            return {}
+        return v
 
     @validator("profile_id")
     def validate_profile_id(cls, v):

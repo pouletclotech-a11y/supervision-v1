@@ -1,8 +1,8 @@
-import os
-import csv
-import re
+import json
+import numpy as np
 import pandas as pd
-from typing import Dict, Any, List, Optional
+from datetime import datetime
+from typing import Dict, Any, List, Optional, Union
 from pathlib import Path
 
 try:
@@ -32,13 +32,35 @@ class InspectionService:
             pass
 
         if ext == '.pdf':
-            return InspectionService._inspect_pdf(file_path)
+            res = InspectionService._inspect_pdf(file_path)
         elif is_binary_excel:
-            return InspectionService._inspect_xlsx(file_path)
+            res = InspectionService._inspect_xlsx(file_path)
         elif ext in ['.xls', '.csv', '.tsv']:
-            return InspectionService._inspect_tsv(file_path)
+            res = InspectionService._inspect_tsv(file_path)
+        else:
+            res = {"file_type": "UNKNOWN", "error": f"Unsupported extension {ext}"}
         
-        return {"file_type": "UNKNOWN", "error": f"Unsupported extension {ext}"}
+        return InspectionService._sanitize_for_json(res)
+
+    @staticmethod
+    def _sanitize_for_json(obj: Any) -> Any:
+        """
+        Recursively convert non-JSON serializable values (NaN, inf, numpy, datetime)
+        to serializable formats.
+        """
+        if isinstance(obj, dict):
+            return {k: InspectionService._sanitize_for_json(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [InspectionService._sanitize_for_json(v) for v in obj]
+        elif isinstance(obj, (float, int, np.floating, np.integer)):
+            if obj is None or pd.isna(obj) or np.isinf(obj):
+                return None
+            return float(obj) if isinstance(obj, (float, np.floating)) else int(obj)
+        elif isinstance(obj, (datetime, pd.Timestamp)):
+            return obj.isoformat()
+        elif pd.isna(obj):
+            return None
+        return obj
 
     @staticmethod
     def _inspect_tsv(file_path: str) -> Dict[str, Any]:

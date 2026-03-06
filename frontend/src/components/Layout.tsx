@@ -28,7 +28,8 @@ import {
     ChevronLeft,
     Users,
     Database,
-    Zap
+    Zap,
+    Activity
 } from 'lucide-react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '../context/AuthContext';
@@ -63,6 +64,7 @@ export default function Layout({ children }: LayoutProps) {
         { text: 'Calibration', icon: <Database size={20} />, path: '/admin/calibration', roles: ['ADMIN'] },
         { text: 'Imports', icon: <Database size={20} />, path: '/admin/imports', roles: ['ADMIN', 'OPERATOR'] },
         { text: 'Users', icon: <Users size={20} />, path: '/admin/users', roles: ['ADMIN'] },
+        { text: 'Test Ingest', icon: <Activity size={20} />, path: '/admin/test-ingest', roles: ['ADMIN'] },
         { text: 'Settings', icon: <Settings size={20} />, path: '/settings', roles: ['ADMIN', 'OPERATOR'] },
     ];
 

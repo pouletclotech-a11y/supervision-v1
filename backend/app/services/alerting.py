@@ -417,7 +417,13 @@ class AlertingService:
                     hit_metadata['zone_label'] = zone_label
                 
                 # Try to extract zone_id from metadata or zone_label
-                evt_metadata = getattr(event, 'metadata', {}) or {}
+                # Use getattr with care: 'metadata' on SQLAlchemy model is the MetaData object, not a dict.
+                evt_metadata = getattr(event, 'event_metadata', None)
+                if evt_metadata is None or not isinstance(evt_metadata, dict):
+                    # Fallback for Pydantic model which uses 'metadata'
+                    m = getattr(event, 'metadata', None)
+                    evt_metadata = m if isinstance(m, dict) else {}
+                
                 zone_id = evt_metadata.get('zone_id')
                 if zone_id:
                     hit_metadata['zone_id'] = zone_id

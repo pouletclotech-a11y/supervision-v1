@@ -60,3 +60,37 @@ Le `ProfileMatcher` filtre désormais par `format_kind`.
 
 ### Notes d'opérateurs (SPGO)
 Les lignes contenant uniquement une heure (ex: `14:25`) sans date sont classées en `OPERATOR_NOTE`. L'horodatage est automatiquement reconstruit à partir de la date du dernier événement de sécurité rencontré dans le même bloc client.
+
+## 3. Ingestions de Test (Admin)
+
+L'application intègre un outil d'upload manuel pour valider les paires Excel + PDF sans passer par le script local.
+
+### Procédure Admin Test Upload
+1. Accédez à la page **Admin > Test Ingest**.
+2. Sélectionnez le **Provider** (ex: SPGO).
+3. Uploadez le fichier **Excel/TSV** (obligatoire).
+4. Uploadez le fichier **PDF compagnon** (optionnel).
+5. (Optionnel) Cochez **Strict Baseline** pour forcer la vérification des compteurs 157/162.
+6. Cliquez sur **Lancer Test**.
+7. Une fois terminé, un résumé s'affiche. Cliquez sur **Ouvrir dans Data Validation** pour inspecter les événements.
+
+### Avantages
+- Statut `MANUAL_VALIDATION` pour isoler les tests de la production.
+- Matching PDF automatique si les deux fichiers sont fournis.
+- Redirection directe vers les résultats pour analyse rapide.
+
+## 4. Triage ResponseValidationError (Schema Hardening)
+
+Si l'API renvoie une Erreur 500 avec `fastapi.exceptions.ResponseValidationError` dans les logs du backend :
+
+### Causes fréquentes
+- **Mismatch Type JSONB** : La base de données contient une liste `[]` alors que le schéma attend un dictionnaire `{}` (ou inversement).
+- **Valeurs Nulles** : Une colonne obligatoire en Pydantic est `NULL` en base de données sans valeur par défaut.
+
+### Résolution
+1. **Identifier les rows coupables** via SQL `jsonb_typeof()`.
+2. **Lancer le script de correction** :
+   ```bash
+   docker compose exec backend sh -c "export PYTHONPATH=/app && python /app/scripts/fix_profile_data.py --apply"
+   ```
+3. **Vérification des validateurs Pydantic** : Utiliser `@validator(..., pre=True)` pour coerrcer les types (ex: `[] -> {}`) avant la validation finale.

@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime, date
 from typing import List, Any, Optional, Dict
 from fastapi import APIRouter, Depends, Query, BackgroundTasks, HTTPException
@@ -11,6 +12,7 @@ from app.core.config import settings
 from app.schemas.response_models import ReplayResult
 
 router = APIRouter()
+logger = logging.getLogger("api-rules")
 
 
 class RuleTriggerRow(BaseModel):
@@ -141,6 +143,7 @@ async def replay_all_rules(
         )
         return ReplayResult(
             status="OK",
+            mode=req.mode,
             events_processed=stats["events_processed"],
             hits_before=stats["hits_before"],
             hits_after=stats["hits_after"],
@@ -150,6 +153,7 @@ async def replay_all_rules(
         raise HTTPException(status_code=400, detail=str(ve))
     except Exception as e:
         logger.error(f"[API_REPLAY_ERROR] {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal error during rule replay.")
 @router.get("/{rule_id}/events", response_model=RuleHitDrillDownResponse)
 async def get_rule_hits_drilldown(
     rule_id: int,
@@ -181,9 +185,3 @@ async def get_rule_hits_drilldown(
         "limit": limit
     }
 
-class ReplayResult(BaseModel):
-    status: str
-    events_processed: int
-    hits_before: int
-    hits_after: int
-    delta: int

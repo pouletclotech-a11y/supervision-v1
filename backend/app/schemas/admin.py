@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Literal
 from pydantic import BaseModel, Field
 
 class AuditLogOut(BaseModel):
@@ -71,5 +71,5 @@ class TestIngestResultOut(BaseModel):
     operator_count: int
     total_count: int
     time_null: int
-    pdf_match_ratio: float
-    status: str
+    pdf_match_ratio: float = 0.0
+    status: Literal["SUCCESS", "BASELINE_FAILED", "FAILED"]

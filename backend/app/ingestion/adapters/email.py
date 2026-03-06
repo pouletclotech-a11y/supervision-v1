@@ -207,7 +207,10 @@ class EmailAdapter(BaseAdapter):
                                     source_message_id=bookmark_id,
                                     metadata={
                                         "sender_email": sender,
+                                        "email_from": sender,
                                         "subject": subject,
+                                        "email_subject": subject,
+                                        "email_message_id": msg_id,
                                         "imap_uid": uid_str,
                                         "message_id": msg_id,
                                         "imap_folder": folder,

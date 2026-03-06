@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc
 from app.db.session import get_db
 from app.db.models import ImportLog, Event, MonitoringProvider
-from app.schemas.response_models import ImportLogOut, ImportListOut, EventOut, EventListOut
+from app.schemas.response_models import ImportLogOut, ImportListOut, EventOut, EventListOut, ImportQualitySummary
 from app.services.repository import EventRepository
 
 router = APIRouter()

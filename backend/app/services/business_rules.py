@@ -107,8 +107,9 @@ def rule_raw_code_match(event_raw_code: Optional[str], rule_config: Dict[str, An
 class BusinessRuleEngine:
     def __init__(self, session: AsyncSession):
         self.session = session
-        # Config statique YAML (chargée une fois par instance)
+        # Cache pour éviter les requêtes DB répétitives sur les mêmes settings (Phase 2A Optimization)
         self._rules_cfg: Optional[Dict[str, Any]] = None
+        self._settings_cache: Dict[str, Any] = {}
 
     async def _rules_config(self) -> Dict[str, Any]:
         if self._rules_cfg is None:
@@ -116,26 +117,25 @@ class BusinessRuleEngine:
         return self._rules_cfg
 
     async def _should_exclude_dup(self, event: Event) -> bool:
-        """
-        Retourne True si l'événement doit être ignoré à cause de dup_count.
-        Priorité : DB setting > config.yml > False.
-        """
-        cfg = await self._rules_config()
-        exclude = cfg.get('exclude_dup_count', False)
-        # Override possible depuis la table settings
-        exclude = await _get_db_setting(self.session, 'monitoring.rules.exclude_dup_count', exclude, expected_type=bool)
-        return bool(exclude) and (event.dup_count or 0) > 0
+        if 'exclude_dup_count' not in self._settings_cache:
+            cfg = await self._rules_config()
+            exclude = cfg.get('exclude_dup_count', False)
+            self._settings_cache['exclude_dup_count'] = await _get_db_setting(self.session, 'monitoring.rules.exclude_dup_count', exclude, expected_type=bool)
+        
+        return bool(self._settings_cache['exclude_dup_count']) and (event.dup_count or 0) > 0
 
     async def _raw_code_mode(self) -> str:
-        cfg = await self._rules_config()
-        default_mode = cfg.get('raw_code_mode', 'IN').upper()
-        return await _get_db_setting(
-            self.session,
-            'monitoring.rules.raw_code_mode',
-            default_mode,
-            expected_type=str,
-            allowed_values=['EXACT', 'IN']
-        )
+        if 'raw_code_mode' not in self._settings_cache:
+            cfg = await self._rules_config()
+            default_mode = cfg.get('raw_code_mode', 'IN').upper()
+            self._settings_cache['raw_code_mode'] = await _get_db_setting(
+                self.session,
+                'monitoring.rules.raw_code_mode',
+                default_mode,
+                expected_type=str,
+                allowed_values=['EXACT', 'IN']
+            )
+        return self._settings_cache['raw_code_mode']
 
     async def evaluate_batch(self, events: List[Event]):
         """Évalue toutes les règles pour un lot d'événements persistés."""
@@ -143,9 +143,12 @@ class BusinessRuleEngine:
         active_rules = await self._load_active_rules()
         raw_code_mode = await self._raw_code_mode()
 
-        cfg = await self._rules_config()
-        v1_enabled = cfg.get('engine_v1_enabled', True)
-        v1_enabled = await _get_db_setting(self.session, 'monitoring.rules.engine_v1_enabled', v1_enabled, expected_type=bool)
+        if 'v1_enabled' not in self._settings_cache:
+            cfg = await self._rules_config()
+            v1_enabled = cfg.get('engine_v1_enabled', True)
+            self._settings_cache['v1_enabled'] = await _get_db_setting(self.session, 'monitoring.rules.engine_v1_enabled', v1_enabled, expected_type=bool)
+        
+        v1_enabled = self._settings_cache['v1_enabled']
 
         logger.debug(f"[ENGINE_V1] enabled={v1_enabled}")
 
@@ -221,16 +224,31 @@ class BusinessRuleEngine:
         """Évalue les AlertRule actives avec matching raw_code et scoring optionnel."""
         cfg = await self._rules_config()
         
-        # 1. Résolution des paramètres globaux
-        global_scoring_enabled = await _get_db_setting(self.session, 'monitoring.rules.scoring_enabled', cfg.get('scoring_enabled', False), expected_type=bool)
-        global_threshold = await _get_db_setting(self.session, 'monitoring.rules.score_threshold_default', cfg.get('score_threshold_default', 0.7), expected_type=(float, int))
-        global_weight = await _get_db_setting(self.session, 'monitoring.rules.score_default_weight', cfg.get('score_default_weight', 1.0), expected_type=(float, int))
-        normalization = await _get_db_setting(self.session, 'monitoring.rules.score_normalization', cfg.get('score_normalization', 1.0), expected_type=(float, int))
-        record_below = await _get_db_setting(self.session, 'monitoring.rules.scoring_record_below_threshold', cfg.get('scoring_record_below_threshold', False), expected_type=bool)
+        if 'scoring_params' not in self._settings_cache:
+            global_scoring_enabled = await _get_db_setting(self.session, 'monitoring.rules.scoring_enabled', cfg.get('scoring_enabled', False), expected_type=bool)
+            global_threshold = await _get_db_setting(self.session, 'monitoring.rules.score_threshold_default', cfg.get('score_threshold_default', 0.7), expected_type=(float, int))
+            global_weight = await _get_db_setting(self.session, 'monitoring.rules.score_default_weight', cfg.get('score_default_weight', 1.0), expected_type=(float, int))
+            normalization = await _get_db_setting(self.session, 'monitoring.rules.score_normalization', cfg.get('score_normalization', 1.0), expected_type=(float, int))
+            record_below = await _get_db_setting(self.session, 'monitoring.rules.scoring_record_below_threshold', cfg.get('scoring_record_below_threshold', False), expected_type=bool)
 
-        if normalization <= 0:
-            logger.warning(f"[SCORING_INVALID_NORMALIZATION] normalization={normalization} <= 0. Falling back to 1.0")
-            normalization = 1.0
+            if normalization <= 0:
+                logger.warning(f"[SCORING_INVALID_NORMALIZATION] normalization={normalization} <= 0. Falling back to 1.0")
+                normalization = 1.0
+            
+            self._settings_cache['scoring_params'] = {
+                "enabled": global_scoring_enabled,
+                "threshold": global_threshold,
+                "weight": global_weight,
+                "normalization": normalization,
+                "record_below": record_below
+            }
+
+        params = self._settings_cache['scoring_params']
+        global_scoring_enabled = params["enabled"]
+        global_threshold = params["threshold"]
+        global_weight = params["weight"]
+        normalization = params["normalization"]
+        record_below = params["record_below"]
 
         for rule in active_rules:
             matched = self._evaluate_single_db_rule(event, rule, raw_code_mode)

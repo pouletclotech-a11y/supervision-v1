@@ -1,0 +1,62 @@
+[
+  {
+    "id": 1,
+    "before": {
+      "id": 1,
+      "profile_id": "efi_pilot",
+      "extraction_rules": {},
+      "normalization": []
+    },
+    "after": {
+      "id": 1,
+      "profile_id": "efi_pilot",
+      "extraction_rules": {},
+      "normalization": {}
+    }
+  },
+  {
+    "id": 16,
+    "before": {
+      "id": 16,
+      "profile_id": "nordedata_tsv",
+      "extraction_rules": [],
+      "normalization": {}
+    },
+    "after": {
+      "id": 16,
+      "profile_id": "nordedata_tsv",
+      "extraction_rules": {},
+      "normalization": {}
+    }
+  },
+  {
+    "id": 17,
+    "before": {
+      "id": 17,
+      "profile_id": "spgo_xlsx",
+      "extraction_rules": [],
+      "normalization": {}
+    },
+    "after": {
+      "id": 17,
+      "profile_id": "spgo_xlsx",
+      "extraction_rules": {},
+      "normalization": {}
+    }
+  },
+  {
+    "id": 18,
+    "before": {
+      "id": 18,
+      "profile_id": "spgo_tsv",
+      "extraction_rules": [],
+      "normalization": {}
+    },
+    "after": {
+      "id": 18,
+      "profile_id": "spgo_tsv",
+      "extraction_rules": {},
+      "normalization": {}
+    }
+  }
+]

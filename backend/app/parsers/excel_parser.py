@@ -65,6 +65,7 @@ class ExcelParser(BaseParser):
 
         mapping_raw = parser_config.get("mapping", []) if parser_config else []
         action_config = parser_config.get("action_config", {}) if parser_config else {}
+        is_histo = (parser_config or {}).get("format") == "HISTO"
         
         # Convert List[MappingRule] to Dict for fast lookup
         mapping = {}
@@ -291,7 +292,7 @@ class ExcelParser(BaseParser):
                 else:
                     # Backward compatibility for existing logic if mapping empty (Phase transition)
                     try:
-                        processed = self._process_row(row, row_idx, file_path, ctx_site_code, ctx_site_code_raw, ctx_client_name, ctx_day, ctx_date, False, source_timezone)
+                        processed = self._process_row(row, row_idx, file_path, ctx_site_code, ctx_site_code_raw, ctx_client_name, ctx_day, ctx_date, is_histo, source_timezone)
                         if processed:
                             evt, ctx_site_code, ctx_site_code_raw, ctx_client_name, ctx_day, ctx_date = processed
                             if evt: 

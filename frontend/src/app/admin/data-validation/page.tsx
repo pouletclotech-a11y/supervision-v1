@@ -352,7 +352,7 @@ function DataValidationInner() {
             field: 'status', headerName: 'Status', width: 90,
             renderCell: (params: GridRenderCellParams) => {
                 let status = params.value;
-                let color: "success" | "error" | "warning" = 'warning';
+                let color: "success" | "error" | "warning" | "info" = 'warning';
 
                 if (status === 'SUCCESS' || status === 'DONE') {
                     if (params.row.match_pct !== undefined && params.row.match_pct < 95) {
@@ -363,6 +363,8 @@ function DataValidationInner() {
                     }
                 } else if (status === 'ERROR') {
                     color = 'error';
+                } else if (status === 'MANUAL_VALIDATION') {
+                    color = 'info';
                 }
 
                 return <Chip label={status} color={color} size="small" variant="filled" sx={{ height: 20, fontSize: 10 }} />;
@@ -613,6 +615,7 @@ function DataValidationInner() {
                                 <option value="SUCCESS">SUCCESS</option>
                                 <option value="ERROR">ERROR</option>
                                 <option value="DONE">DONE</option>
+                                <option value="MANUAL_VALIDATION">MANUAL</option>
                             </TextField>
                             <Button
                                 size="small"

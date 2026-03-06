@@ -38,7 +38,7 @@ from app.ingestion.adapters.base import BaseAdapter, AdapterItem
 from app.ingestion.profile_manager import ProfileManager
 from app.ingestion.profile_matcher import ProfileMatcher
 from app.ingestion.redis_lock import RedisLock
-from app.ingestion.utils import compute_sha256, get_file_probe
+from app.ingestion.utils import compute_sha256, get_file_probe, detect_file_format
 
 # Register Parsers
 ParserFactory.register_parser(ExcelParser)
@@ -63,30 +63,6 @@ profile_matcher = ProfileMatcher(profile_manager)
 
 
 
-def detect_file_format(path: Path) -> str:
-    """
-    Detect format by magic numbers and content (Phase 2).
-    """
-    try:
-        with open(path, 'rb') as f:
-            header = f.read(8)
-            # PK ZIP (XLSX)
-            if header.startswith(b'PK\x03\x04'):
-                return "XLSX_NATIVE"
-            # OLE2 (Old XLS)
-            if header.startswith(b'\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1'):
-                return "OLE2_XLS"
-        
-        # Fallback to Text/TSV detection
-        with open(path, 'r', encoding='latin-1', errors='replace') as f:
-            # Check first 5 lines for tabs
-            lines = [f.readline() for _ in range(5)]
-            tab_count = sum(line.count('\t') for line in lines)
-            if tab_count > 0:
-                return "TSV_XLS"
-    except:
-        pass
-    return "UNKNOWN"
 
 async def process_ingestion_item(adapter: BaseAdapter, item: AdapterItem, redis_lock: RedisLock, redis_client, poll_run_id: str = "", existing_import_id: int = None) -> Optional[int]:
     """
@@ -146,8 +122,24 @@ async def process_ingestion_item(adapter: BaseAdapter, item: AdapterItem, redis_
             elif is_replay:
                 import_log = existing_import
             else:
-                import_log = await repo.create_import_log(item.filename, file_hash=item.sha256, provider_id=resolved_provider_id)
+                # Grouping Logic: Check if we already have an import for this source email
+                import_log = await repo.get_import_by_source_message_id(item.source_message_id)
+                if not import_log:
+                    import_log = await repo.create_import_log(
+                        item.filename, 
+                        file_hash=item.sha256, 
+                        provider_id=resolved_provider_id,
+                        import_metadata=item.metadata
+                    )
+                else:
+                    logger.info(f"[Ingestion] Grouping with existing ImportLog {import_log.id} via source_message_id {item.source_message_id}")
+                    # Update metadata to include second attachment info
+                    meta = dict(import_log.import_metadata or {})
+                    meta["secondary_filename"] = item.filename
+                    meta["secondary_sha256"] = item.sha256
+                    import_log.import_metadata = meta
             
+            import_log.source_message_id = item.source_message_id
             import_log.adapter_name = item.source
 
             # 5. Profile Matching (Phase 2: Provider + Kind + Filename)
@@ -161,7 +153,8 @@ async def process_ingestion_item(adapter: BaseAdapter, item: AdapterItem, redis_
             sorted_profiles = sorted(profiles, key=lambda x: x.priority, reverse=True)
             
             for p in sorted_profiles:
-                if p.format_kind != detected_kind:
+                # Extension fallback: if detected_kind is UNKNOWN, we check if the profile extension matches
+                if detected_kind != "UNKNOWN" and p.format_kind != detected_kind:
                     continue
                 
                 # Case A: Provider matches
@@ -332,7 +325,8 @@ async def process_ingestion_item(adapter: BaseAdapter, item: AdapterItem, redis_
                     source_timezone=matched_profile.source_timezone,
                     parser_config={
                         "mapping": mapping_dict,
-                        "action_config": matched_profile.action_config
+                        "action_config": matched_profile.action_config,
+                        **(matched_profile.parser_config or {})
                     }
                 )
                 events = parse_result if isinstance(parse_result, list) else []
@@ -687,7 +681,7 @@ async def worker_loop():
         except Exception as e:
             logger.error(f"[METRIC] event=poll_cycle_error run_id={poll_run_id} reason={e}", exc_info=True)
 
-        elapsed_ms = int((time.monotonic() - t0) * 1000)
+        elapsed_ms = int((time.monotonic() - t_cycle_start) * 1000)
         logger.info(f"[METRIC] event=poll_cycle_done run_id={poll_run_id} duration_ms={elapsed_ms}")
         
         # Write heartbeat

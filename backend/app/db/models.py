@@ -130,7 +130,7 @@ class DBIngestionProfile(Base):
     mapping: Mapped[list] = mapped_column(JSONB)
     parser_config: Mapped[dict] = mapped_column(JSONB, default={})
     extraction_rules: Mapped[dict] = mapped_column(JSONB, default={})
-    normalization: Mapped[list] = mapped_column(JSONB, default={})
+    normalization: Mapped[dict] = mapped_column(JSONB, default={})
     
     # Specific options
     excel_options: Mapped[Optional[dict]] = mapped_column(JSONB)

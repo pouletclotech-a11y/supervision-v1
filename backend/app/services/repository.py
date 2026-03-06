@@ -63,6 +63,14 @@ class EventRepository:
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
+    async def get_import_by_source_message_id(self, source_message_id: str) -> Optional[ImportLog]:
+        """Looks up the most recent import log sharing the same email source ID."""
+        if not source_message_id:
+            return None
+        stmt = select(ImportLog).where(ImportLog.source_message_id == source_message_id).order_by(ImportLog.created_at.desc()).limit(1)
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
     async def create_import_log(self, filename: str, file_hash: str = None, provider_id: int = None, import_metadata: dict = None, raw_payload: str = None) -> ImportLog:
         # User requested 8-32KB truncation
         truncated_payload = None

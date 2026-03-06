@@ -11,8 +11,10 @@ from sqlalchemy import select
 from app.auth import deps
 from app.db.models import User, ImportLog, MonitoringProvider
 from app.schemas.admin import TestIngestResultOut
-from app.parsers.tsv_parser import TsvParser as SpgoTsvParser
-from app.parsers.pdf_parser import PdfParser as SpgoPdfParser
+from app.parsers.factory import ParserFactory
+from app.ingestion.profile_manager import ProfileManager
+from app.ingestion.profile_matcher import ProfileMatcher
+from app.ingestion.utils import detect_file_format, get_file_probe
 from app.services.pdf_match_service import PdfMatchService
 from app.services.repository import EventRepository
 
@@ -100,18 +102,58 @@ async def admin_test_ingest(
         db.add(imp)
         await db.flush()
 
-        # 5. Parsing (Isolated Provider Logic)
-        if provider_code == "SPGO":
-            # SPGO Specific Logic
-            tsv_parser = SpgoTsvParser()
-            excel_events = tsv_parser.parse(str(excel_path), source_timezone="Europe/Paris")
+        # 5. Ingestion Pipeline (Production-Grade Resolution)
+        # Use existing ProfileMatcher to find the best profile for this file
+        profile_manager = ProfileManager()
+        await profile_manager.load_profiles(db)
+        profile_matcher = ProfileMatcher(profile_manager)
+        
+        detected_kind = detect_file_format(excel_path)
+        headers_probe, text_probe = get_file_probe(excel_path)
+        
+        matched_profile, match_report = profile_matcher.match(
+            excel_path,
+            detected_format=detected_kind,
+            headers=headers_probe,
+            text_content=text_probe
+        )
+        
+        # Security check: If provider_id of profile doesn't match selected provider_code
+        # we still proceed but we warn or force re-classification like in worker.py
+        if matched_profile and matched_profile.provider_code and matched_profile.provider_code != provider_code:
+            logger.info(f"[TestIngest] Re-classified via profile: {provider_code} -> {matched_profile.provider_code}")
+        
+        if not matched_profile:
+            raise HTTPException(status_code=400, detail=f"No profile matched for file {excel_file.filename} (detected_kind={detected_kind})")
+
+        # 6. Parsing
+        parser = ParserFactory.get_parser_by_kind(matched_profile.format_kind)
+        if not parser:
+            # Fallback to extension
+            parser = ParserFactory.get_parser(excel_path.suffix)
             
-            pdf_events = []
-            if pdf_path:
-                pdf_parser = SpgoPdfParser()
+        if not parser:
+            raise HTTPException(status_code=400, detail=f"No parser found for kind {matched_profile.format_kind}")
+
+        # Convert List[MappingRule] to Dict for parsers
+        mapping_dict = {m.target: m.source for m in matched_profile.mapping}
+        
+        excel_events = parser.parse(
+            str(excel_path), 
+            source_timezone="Europe/Paris",
+            parser_config={
+                "mapping": mapping_dict,
+                "action_config": matched_profile.action_config,
+                **(matched_profile.parser_config or {})
+            }
+        )
+        
+        pdf_events = []
+        if pdf_path:
+            # For PDF, we try to use the PDF parser if it matches the profile or extension
+            pdf_parser = ParserFactory.get_parser(".pdf")
+            if pdf_parser:
                 pdf_events = pdf_parser.parse(str(pdf_path), source_timezone="Europe/Paris")
-        else:
-            raise HTTPException(status_code=400, detail="Only SPGO is currently supported for strict test ingestion")
 
         # 6. Store Data
         repo = EventRepository(db)
@@ -131,7 +173,9 @@ async def admin_test_ingest(
             match_report = matcher.calculate_match_report(db_evts, pdf_events, provider_conf)
 
         # Update ImportLog
-        imp.quality_report = getattr(tsv_parser, 'last_metrics', {})
+        # Try to get metrics from parser if available (metrics are not standardized yet across all parsers)
+        metrics = getattr(parser, 'last_metrics', {})
+        imp.quality_report = metrics
         imp.pdf_match_report = match_report
         imp.events_count = len(db_evts)
         
@@ -150,6 +194,8 @@ async def admin_test_ingest(
 
         res_status = "SUCCESS"
         if strict_baseline:
+            if provider_code != "SPGO":
+                 raise HTTPException(status_code=400, detail="Strict baseline check is only supported for SPGO provider")
             if counts["security"] != 157 or counts["operator"] != 162 or time_null > 0:
                 res_status = "BASELINE_FAILED"
 
@@ -163,10 +209,15 @@ async def admin_test_ingest(
             status=res_status
         )
 
+    except HTTPException:
+        await db.rollback()
+        if excel_path and excel_path.exists(): excel_path.unlink()
+        if pdf_path and pdf_path.exists(): pdf_path.unlink()
+        raise
     except Exception as e:
         await db.rollback()
         logger.error(f"Test ingestion failed: {e}")
         # Cleanup on failure
         if excel_path and excel_path.exists(): excel_path.unlink()
         if pdf_path and pdf_path.exists(): pdf_path.unlink()
-        raise HTTPException(status_code=500, detail=f"Ingestion failed: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"Ingestion failed: {str(e)}")
