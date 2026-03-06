@@ -53,10 +53,17 @@ L'extraction des codes conserve les symboles `$`, `-`, `_`, `/`, `.` mais s'arr�
 - `GET /api/v1/imports/{id}/quality-report` : Détails techniques des erreurs de parsing.
 L'API privilégie `archive_path_pdf` pour les téléchargements de type `pdf`.
 
+### Regroupement Logique (Phase 6 V1.3)
+Depuis la Phase 6 V1.3, les pièces jointes d'un même email sont regroupées en un seul lot logique :
+- **Clé de regroupement** : `Message-ID` de l'email source (stocké dans `source_message_id`).
+- **Comportement** : Le premier fichier traité (Excel ou PDF) crée l'`ImportLog`. Le second fichier est rattaché au même ID, mettant à jour les métadonnées et les chemins d'archivage (`archive_path_pdf`).
+- **Sécurité** : La sélection du profil PDF est pilotée par des `filename_regex` strictes pour éviter les collisions entre SPGO et CORS.
+
 ### Profils Stricts
-Le `ProfileMatcher` filtre désormais par `format_kind`. 
-- Un profil avec `format_kind=EXCEL` ne traitera JAMAIS un fichier PDF.
-- Si un fichier est mal détecté, vérifiez les logs du worker : `[FORMAT_MISMATCH]`.
+Le `ProfileMatcher` utilise les regex suivantes pour les PDF :
+- SPGO : `YPSILON\.pdf`
+- CORS : `_HISTO\.pdf`
+Une priorité plus élevée (20) est donnée à CORS pour garantir que `_HISTO.pdf` est détecté avant le pattern générique SPGO.
 
 ### Notes d'opérateurs (SPGO)
 Les lignes contenant uniquement une heure (ex: `14:25`) sans date sont classées en `OPERATOR_NOTE`. L'horodatage est automatiquement reconstruit à partir de la date du dernier événement de sécurité rencontré dans le même bloc client.

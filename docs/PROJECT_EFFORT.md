@@ -29,6 +29,12 @@ Ce document recense les heures investies dans la conception, le développement e
 
 ## 2. Historique des Ajouts
 
+### 2026-03-06 — Phase 11 — Attachment Grouping & PDF Security [+6h]
+- **Status**: DONE (Mar 06, 2026)
+- **Description**: Implemented reliable grouping of Excel/PDF attachments by email source and hardened PDF profile selection.
+- **Key Contributions**: Logic for single ImportLog reuse via `source_message_id`, enriched `import_metadata` with email headers, and strict `filename_regex` for PDF profiles to prevent SPGO/CORS collisions.
+- **Validation**: Fixed an alerting engine regression (`AttributeError` on metadata). Validated grouping and matching via SQL proofs and simulation scripts.
+
 ### 2026-03-05 — Phase 10 — Replay All Optimization [+3h]
 - **Status**: DONE (Mar 05, 2026)
 - **Description**: Fixed 500/CORS error on `replay-all` and optimized DB query per-event overhead.
