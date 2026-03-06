@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional, List
 from enum import Enum
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, computed_field
 
 class ImportQualitySummary(BaseModel):
     created_ratio: float
@@ -69,6 +69,11 @@ class EventOut(BaseModel):
     # dup_count: int
     created_at: datetime
     triggered_rules: List[TriggeredRuleSummary] = []
+    
+    @computed_field
+    @property
+    def timestamp(self) -> datetime:
+        return self.time
 
     model_config = ConfigDict(from_attributes=True)
 
