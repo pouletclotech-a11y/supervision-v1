@@ -71,6 +71,33 @@ class EventRepository:
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
+    async def count_imports_today_tz(self, provider_id: int, tz_name: str = "Europe/Paris") -> int:
+        """
+        Nombre d'importations (lots) réussies ou en cours pour un fournisseur aujourd'hui.
+        Exclut les imports DAILY_QUOTA_EXCEEDED pour ne pas polluer le compteur.
+        Calcule "aujourd'hui" selon le fuseau horaire spécifié (ex: Europe/Paris).
+        """
+        if not provider_id:
+            return 0
+            
+        tz = pytz.timezone(tz_name)
+        now_tz = datetime.now(tz)
+        # Minuit local dans le fuseau horaire cible
+        midnight_tz = now_tz.replace(hour=0, minute=0, second=0, microsecond=0)
+        # Conversion en UTC pour la comparaison en base (qui stocke en UTC)
+        midnight_utc = midnight_tz.astimezone(pytz.UTC)
+        
+        stmt = (
+            select(func.count(ImportLog.id))
+            .where(
+                ImportLog.provider_id == provider_id,
+                ImportLog.created_at >= midnight_utc,
+                ImportLog.status != "DAILY_QUOTA_EXCEEDED"
+            )
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar() or 0
+
     async def create_import_log(self, filename: str, file_hash: str = None, provider_id: int = None, import_metadata: dict = None, raw_payload: str = None) -> ImportLog:
         # User requested 8-32KB truncation
         truncated_payload = None

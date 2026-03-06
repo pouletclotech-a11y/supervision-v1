@@ -124,21 +124,56 @@ async def process_ingestion_item(adapter: BaseAdapter, item: AdapterItem, redis_
             else:
                 # Grouping Logic: Check if we already have an import for this source email
                 import_log = await repo.get_import_by_source_message_id(item.source_message_id)
-                if not import_log:
-                    import_log = await repo.create_import_log(
-                        item.filename, 
-                        file_hash=item.sha256, 
-                        provider_id=resolved_provider_id,
-                        import_metadata=item.metadata
-                    )
-                else:
-                    logger.info(f"[Ingestion] Grouping with existing ImportLog {import_log.id} via source_message_id {item.source_message_id}")
-                    # Update metadata to include second attachment info
-                    meta = dict(import_log.import_metadata or {})
-                    meta["secondary_filename"] = item.filename
-                    meta["secondary_sha256"] = item.sha256
-                    import_log.import_metadata = meta
-            
+
+            # Security V3: Non-bypassable quota block
+            if import_log and import_log.status == "DAILY_QUOTA_EXCEEDED":
+                logger.warning(f"[QUOTA_BLOCKED] Skipping secondary file {item.filename} for already blocked lot {import_log.id}")
+                archive_path = await adapter.ack_unmatched(item, "DAILY_QUOTA_EXCEEDED (Grouped)")
+                if archive_path:
+                    import_log.archive_path = str(archive_path)
+                    await session.commit()
+                return import_log.id, []
+
+            if not import_log:
+                # NEW: Daily Quota Check (V3)
+                if monitoring_provider:
+                    max_quota = monitoring_provider.max_emails_per_day if monitoring_provider.max_emails_per_day is not None else 10
+                    current_count = await repo.count_imports_today_tz(monitoring_provider.id)
+                    
+                    if current_count >= max_quota:
+                        logger.warning(f"[QUOTA_EXCEEDED] Provider={provider_code} Count={current_count} Max={max_quota} msg_id={item.source_message_id} file={item.filename}")
+                        import_log = await repo.create_import_log(
+                            item.filename, 
+                            file_hash=item.sha256, 
+                            provider_id=resolved_provider_id,
+                            import_metadata=item.metadata
+                        )
+                        import_log.status = "DAILY_QUOTA_EXCEEDED"
+                        import_log.source_message_id = item.source_message_id
+                        import_log.error_message = f"DAILY_QUOTA_EXCEEDED: Quota of {max_quota} emails reached for today (Paris Time)."
+                        await session.commit()
+                        # Ack as unmatched/ignored to clear from inbox but not count as success
+                        archive_path = await adapter.ack_unmatched(item, "DAILY_QUOTA_EXCEEDED")
+                        if archive_path:
+                            import_log.archive_path = str(archive_path)
+                            import_log.archive_status = "ARCHIVED"
+                            await session.commit()
+                        return import_log.id, []
+
+                import_log = await repo.create_import_log(
+                    item.filename, 
+                    file_hash=item.sha256, 
+                    provider_id=resolved_provider_id,
+                    import_metadata=item.metadata
+                )
+            else:
+                logger.info(f"[Ingestion] Grouping with existing ImportLog {import_log.id} via source_message_id {item.source_message_id}")
+                # Update metadata to include second attachment info
+                meta = dict(import_log.import_metadata or {})
+                meta["secondary_filename"] = item.filename
+                meta["secondary_sha256"] = item.sha256
+                import_log.import_metadata = meta
+
             import_log.source_message_id = item.source_message_id
             import_log.adapter_name = item.source
 
@@ -181,7 +216,7 @@ async def process_ingestion_item(adapter: BaseAdapter, item: AdapterItem, redis_
                         if new_p:
                             import_log.provider_id = new_p.id
                     break
-                elif provider_match:
+                elif provider_match and not p.filename_regex:
                     matched_profile = p
                     break
                 elif agnostic_match:

@@ -269,6 +269,9 @@ class MonitoringProvider(Base):
     quality_min_created_ratio: Mapped[float] = mapped_column(Float, default=0.8)
     quality_alert_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     
+    # Phase Security V3: Daily Quota
+    max_emails_per_day: Mapped[int] = mapped_column(Integer, default=10)
+
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 class SmtpProviderRule(Base):
