@@ -225,12 +225,25 @@ class SiteTopRule(BaseModel):
     rule_name: str
     count: int
 
+class SiteKPIs(BaseModel):
+    events_count: int
+    alerts_count: int
+    last_event_at: Optional[datetime] = None
+    last_alert_at: Optional[datetime] = None
+    top_rules: List[SiteTopRule] = []
+
+class SiteTimeline(BaseModel):
+    events: EventListOut
+    alerts: AlertListResponse
+
 class ClientSiteSummaryOut(BaseModel):
     site_code: str
     client_name: Optional[str] = None
     provider_name: Optional[str] = None
-    kpis: dict # events_count, alerts_count, last_event_at, last_alert_at, top_rules: List[SiteTopRule]
-    timeline: dict # {"events": EventListOut, "alerts": AlertListResponse}
+    kpis: SiteKPIs
+    timeline: SiteTimeline
+
+    model_config = ConfigDict(from_attributes=True)
 class ReplayResult(BaseModel):
     status: str
     mode: str

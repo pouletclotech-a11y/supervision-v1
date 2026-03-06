@@ -140,10 +140,20 @@ async def get_site_summary(
     )
     total_alerts = total_alrts_stmt.scalar() or 0
 
+    # Final site info extraction
+    if isinstance(site_info, dict):
+        resp_site_code = site_info["site_code"]
+        resp_client_name = site_info["client_name"]
+        resp_provider_name = site_info["provider_name"]
+    else:
+        resp_site_code = getattr(site_info, "site_code", site_code)
+        resp_client_name = getattr(site_info, "client_name", "Unknown")
+        resp_provider_name = getattr(site_info, "provider_name", "Unknown")
+
     return {
-        "site_code": site_info["site_code"] if isinstance(site_info, dict) else site_info.site_code,
-        "client_name": site_info["client_name"] if isinstance(site_info, dict) else site_info.client_name,
-        "provider_name": site_info["provider_name"] if isinstance(site_info, dict) else site_info.provider_name,
+        "site_code": resp_site_code,
+        "client_name": resp_client_name,
+        "provider_name": resp_provider_name,
         "kpis": {
             "events_count": events_count,
             "alerts_count": alerts_count,
