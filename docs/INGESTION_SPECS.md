@@ -39,6 +39,13 @@ The system handles two main file types, which serve distinct purposes:
 ### Excel Parser (`excel_parser.py`)
 -   Handles both legacy TSV-like `.xls` and binary `.xlsx`.
 -   Strict cell cleaning and state mapping.
+-   **CORS Specific Mapping**:
+    -   `site_code` -> Column A
+    -   `datetime` -> Column G
+    -   `state` -> Column H
+    -   `alarm_code` -> Column I
+    -   `details` -> Column J
+    -   `operator_action` -> Column N (If not empty, state = `OPERATOR_ACTION`, details = Col N)
 
 ### PDF Parser (`pdf_parser.py`)
 -   Enriched extraction: captures Day, Date, Time, Full Alarm Code and State.

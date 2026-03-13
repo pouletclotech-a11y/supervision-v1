@@ -27,6 +27,20 @@ Ce document recense les heures investies dans la conception, le développement e
 
 ---
 
+### 2026-03-13 — Correction Parser Excel CORS [+2h]
+- **Status**: DONE (Mar 13, 2026)
+- **Description**: Correction du mapping des colonnes pour les fichiers Excel du provider CORS et gestion des actions opérateur.
+- **Key Contributions**:
+    - `site_code` -> Colonne A
+    - `datetime` -> Colonne G
+    - `state` -> Colonne H
+    - `alarm_code` -> Colonne I
+    - `details` -> Colonne J
+    - `operator_action` -> Colonne N (Extraction et marquage `OPERATOR_ACTION`)
+- **Validation**: Test d'ingestion sur le fichier `2026-03-13-06-YPSILON_HISTO.xlsx`.
+
+---
+
 ## 2. Historique des Ajouts
 
 ### 2026-03-06 — Phase 11 — Attachment Grouping & PDF Security [+6h]

@@ -361,6 +361,7 @@ async def process_ingestion_item(adapter: BaseAdapter, item: AdapterItem, redis_
                     parser_config={
                         "mapping": mapping_dict,
                         "action_config": matched_profile.action_config,
+                        "provider_code": provider_code,
                         **(matched_profile.parser_config or {})
                     }
                 )

@@ -66,6 +66,7 @@ class ExcelParser(BaseParser):
         mapping_raw = parser_config.get("mapping", []) if parser_config else []
         action_config = parser_config.get("action_config", {}) if parser_config else {}
         is_histo = (parser_config or {}).get("format") == "HISTO"
+        provider_code = (parser_config or {}).get("provider_code")
         
         # Convert List[MappingRule] to Dict for fast lookup
         mapping = {}
@@ -97,6 +98,7 @@ class ExcelParser(BaseParser):
             ctx_client_name = None
             ctx_day = None
             ctx_date = None
+            last_ts = None # For HISTO operator actions
 
             for idx, row_series in df.iterrows():
                 row = []
@@ -254,6 +256,7 @@ class ExcelParser(BaseParser):
                     # Severity/Status: INFO, WARN, CRITICAL
                     # NormalizedType: APPARITION, DISPARITION, ...
                     
+                    norm_type = "UNKNOWN"
                     if is_operator_action:
                         norm_type = "OPERATOR_ACTION"
                         severity = "INFO"
@@ -292,12 +295,13 @@ class ExcelParser(BaseParser):
                 else:
                     # Backward compatibility for existing logic if mapping empty (Phase transition)
                     try:
-                        processed = self._process_row(row, row_idx, file_path, ctx_site_code, ctx_site_code_raw, ctx_client_name, ctx_day, ctx_date, is_histo, source_timezone)
+                        processed = self._process_row(row, row_idx, file_path, ctx_site_code, ctx_site_code_raw, ctx_client_name, ctx_day, ctx_date, is_histo, source_timezone, provider_code=provider_code, last_ts=last_ts)
                         if processed:
                             evt, ctx_site_code, ctx_site_code_raw, ctx_client_name, ctx_day, ctx_date = processed
                             if evt: 
                                 events.append(evt)
                                 metrics["events_created"] += 1
+                                last_ts = evt.timestamp
                     except: 
                         record_skip("LEGACY_PARSE_ERROR", row_idx, row)
             
@@ -310,9 +314,9 @@ class ExcelParser(BaseParser):
             
         return events
 
-    def _process_row(self, clean_row, row_idx, file_path, ctx_site_code, ctx_site_code_raw, ctx_client_name, ctx_day, ctx_date, is_histo=False, source_timezone="UTC", is_efi=False):
+    def _process_row(self, clean_row, row_idx, file_path, ctx_site_code, ctx_site_code_raw, ctx_client_name, ctx_day, ctx_date, is_histo=False, source_timezone="UTC", is_efi=False, provider_code=None, last_ts=None):
         if is_histo:
-            return self._process_row_histo(clean_row, row_idx, file_path, ctx_site_code, ctx_site_code_raw, ctx_client_name, ctx_day, ctx_date, source_timezone)
+            return self._process_row_histo(clean_row, row_idx, file_path, ctx_site_code, ctx_site_code_raw, ctx_client_name, ctx_day, ctx_date, source_timezone, provider_code=provider_code, last_ts=last_ts)
         
         col_a, col_b, col_c, col_d, col_e, col_f, col_g = [clean_excel_value(c) for c in clean_row[:7]]
 
@@ -423,24 +427,40 @@ class ExcelParser(BaseParser):
         
         return event, ctx_site_code, ctx_site_code_raw, ctx_client_name, ctx_day, ctx_date
 
-    def _process_row_histo(self, clean_row, row_idx, file_path, ctx_site_code, ctx_site_code_raw, ctx_client_name, ctx_day, ctx_date, source_timezone="UTC"):
+    def _process_row_histo(self, clean_row, row_idx, file_path, ctx_site_code, ctx_site_code_raw, ctx_client_name, ctx_day, ctx_date, source_timezone="UTC", provider_code=None, last_ts=None):
         # Format YPSILON_HISTO:
-        # Col 0: Site code (8 digits) OR empty
-        # Col 1: Client name OR empty
-        # Col 6: Timestamp "dd/mm/yyyy hh:mm:ss" OR datetime object
-        # Col 7: Action (APPARITION, etc.)
-        # Col 8: Message
+        # Col 0 (A): Site code
+        # Col 1 (B): Client name
+        # Col 6 (G): Timestamp
+        # Col 7 (H): Action
+        # Col 8 (I): Message/Code
         
         col_site = str(clean_excel_value(clean_row[0])).strip()
         col_client = str(clean_excel_value(clean_row[1])).strip()
-        col_ts = clean_row[6]
-        col_action = str(clean_excel_value(clean_row[7])).strip()
-        col_msg = str(clean_excel_value(clean_row[8])).strip()
+        
+        # Mapping CORS Spécifique
+        if provider_code == "CORS":
+            # A=0, G=6, H=7, I=8, J=9, N=13
+            col_ts = clean_row[6]
+            col_action = str(clean_excel_value(clean_row[7])).strip()
+            col_code = str(clean_excel_value(clean_row[8])).strip() # alarm_code (I)
+            col_msg = str(clean_excel_value(clean_row[9])).strip()  # details (J)
+            
+            # Action Opérateur (N = index 13)
+            col_op_action = str(clean_excel_value(clean_row[13])).strip() if len(clean_row) > 13 else ""
+            if col_op_action:
+                col_action = "OPERATOR_ACTION"
+                col_msg = col_op_action
+        else:
+            # Default mapping (SPGO, etc.)
+            col_ts = clean_row[6]
+            col_action = str(clean_excel_value(clean_row[7])).strip()
+            col_msg = str(clean_excel_value(clean_row[8])).strip()
+            col_code = None
 
         # 1. Propagation
         if col_site:
             col_site_clean = str(col_site).strip()
-            # Handle both formats: "69000" or "C-69000"
             match_site = re.match(r'^(C-)?(\d+)$', col_site_clean)
             if match_site:
                 ctx_site_code, ctx_site_code_raw = normalize_site_code_full(col_site_clean)
@@ -454,23 +474,28 @@ class ExcelParser(BaseParser):
         elif col_ts:
             col_ts_str = str(clean_excel_value(col_ts)).strip()
             if col_ts_str:
-                for fmt in ["%d/%m/%Y %H:%M:%S", "%Y-%m-%d %H:%M:%S"]:
+                for fmt in ["%d/%m/%Y %H:%M:%S", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M:%S.%f"]:
                     try:
                         ts = datetime.strptime(col_ts_str, fmt)
                         break
                     except ValueError:
                         continue
         
-        if not ts or not col_msg or col_msg.lower() == 'nan' or not ctx_site_code:
-            return None, ctx_site_code, ctx_site_code_raw, ctx_client_name, ctx_day, ctx_date
+        if not ts or not ctx_site_code:
+            if provider_code == "CORS" and col_action == "OPERATOR_ACTION" and last_ts and ctx_site_code:
+                ts = last_ts
+            else:
+                return None, ctx_site_code, ctx_site_code_raw, ctx_client_name, ctx_day, ctx_date
         
         # State mapping
         state = "UNKNOWN"
-        if "APPARITION" in col_action.upper(): state = "APPARITION"
-        elif "DISPARITION" in col_action.upper(): state = "DISPARITION"
-        elif "EXPIRATION" in col_action.upper(): state = "EXPIRATION"
-        elif "MISE EN SERVICE" in col_action.upper(): state = "MISE_EN_SERVICE"
-        elif "MISE HORS SERVICE" in col_action.upper(): state = "MISE_HORS_SERVICE"
+        action_upper = col_action.upper()
+        if "APPARITION" in action_upper: state = "APPARITION"
+        elif "DISPARITION" in action_upper: state = "DISPARITION"
+        elif "EXPIRATION" in action_upper: state = "EXPIRATION"
+        elif "MISE EN SERVICE" in action_upper: state = "MISE_EN_SERVICE"
+        elif "MISE HORS SERVICE" in action_upper: state = "MISE_HORS_SERVICE"
+        elif "OPERATOR_ACTION" in action_upper: state = "OPERATOR_ACTION"
 
         event = NormalizedEvent(
             timestamp=self._normalize_timestamp(ts, source_timezone),
@@ -478,23 +503,28 @@ class ExcelParser(BaseParser):
             site_code_raw=ctx_site_code_raw,
             client_name=ctx_client_name,
             weekday_label=None,
-            event_type=col_action if col_action and col_action.lower() != 'nan' else "EVENT",
+            event_type=state if state != "UNKNOWN" else (col_action if col_action and col_action.lower() != 'nan' else "EVENT"),
+            normalized_type=state if state != "UNKNOWN" else (col_action if col_action and col_action.lower() != 'nan' else "EVENT"),
             raw_message=f"{col_action} | {col_msg}" if col_action and col_action.lower() != 'nan' else col_msg,
             normalized_message=normalize_text(f"{col_action} | {col_msg}" if col_action and col_action.lower() != 'nan' else col_msg),
-            raw_code=None,
+            raw_code=col_code,
             status="ALARM" if state == "APPARITION" else "INFO",
             source_file=file_path,
             row_index=row_idx,
-            raw_data=json.dumps(clean_row if isinstance(clean_row, list) else []),
+            raw_data=json.dumps([str(x) for x in clean_row]),
             tenant_id="default-tenant"
         )
 
-        # In HISTO, the code might be inside the message after a '$'
+        # In non-CORS HISTO, the code might be inside the message after a '$'
         if not event.raw_code and '$' in col_msg:
-            match_code = re.search(r'\$([\w-]+)', col_msg) # Allow hyphen in code
+            match_code = re.search(r'\$([\w-]+)', col_msg)
             if match_code:
                 event.raw_code = match_code.group(1)
         
+        # Normalization of code only if it exists
+        if event.raw_code:
+            event.normalized_code = self._normalize_code(event.raw_code)
+
         event.metadata = {
             "state": state,
             "raw_action": col_action,
