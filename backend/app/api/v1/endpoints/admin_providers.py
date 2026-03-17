@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete
 from app.auth import deps
-from app.db.models import MonitoringProvider, SmtpProviderRule, User
+from app.db.models import MonitoringProvider, SmtpProviderRule, User, AuditLog
 from app.schemas.monitoring_provider import (
     MonitoringProviderCreate, 
     MonitoringProviderUpdate, 
@@ -19,9 +19,13 @@ router = APIRouter()
 async def get_providers(
     db: AsyncSession = Depends(deps.get_db),
     current_user: User = Depends(deps.get_current_active_admin),
+    provider_ids: Optional[list[int]] = Depends(deps.get_user_provider_ids)
 ) -> Any:
     """Get all providers with full configuration."""
-    stmt = select(MonitoringProvider).order_by(MonitoringProvider.label.asc())
+    stmt = select(MonitoringProvider).where(MonitoringProvider.deleted_at.is_(None))
+    if provider_ids is not None:
+        stmt = stmt.where(MonitoringProvider.id.in_(provider_ids))
+    stmt = stmt.order_by(MonitoringProvider.label.asc())
     result = await db.execute(stmt)
     return result.scalars().all()
 
@@ -29,7 +33,7 @@ async def get_providers(
 async def create_provider(
     provider_in: MonitoringProviderCreate,
     db: AsyncSession = Depends(deps.get_db),
-    current_user: User = Depends(deps.get_current_active_admin),
+    current_user: User = Depends(deps.get_current_super_admin),
 ) -> Any:
     """Create a new provider."""
     # Check if code already exists
@@ -44,6 +48,10 @@ async def create_provider(
     
     provider = MonitoringProvider(**provider_data)
     db.add(provider)
+    
+    audit = AuditLog(user_id=current_user.id, action="CREATE_PROVIDER", target_type="PROVIDER", payload={"code": code_upper})
+    db.add(audit)
+    
     await db.commit()
     await db.refresh(provider)
     return provider
@@ -54,8 +62,12 @@ async def update_provider(
     provider_in: MonitoringProviderUpdate,
     db: AsyncSession = Depends(deps.get_db),
     current_user: User = Depends(deps.get_current_active_admin),
+    provider_ids: Optional[list[int]] = Depends(deps.get_user_provider_ids)
 ) -> Any:
     """Update a provider."""
+    if provider_ids is not None and provider_id not in provider_ids:
+        raise HTTPException(status_code=403, detail="Not authorized for this provider")
+        
     stmt = select(MonitoringProvider).where(MonitoringProvider.id == provider_id)
     result = await db.execute(stmt)
     provider = result.scalar_one_or_none()
@@ -70,21 +82,71 @@ async def update_provider(
         else:
             setattr(provider, field, value)
             
+    audit = AuditLog(user_id=current_user.id, action="UPDATE_PROVIDER", target_type="PROVIDER", target_id=str(provider_id))
+    db.add(audit)
     await db.commit()
     await db.refresh(provider)
     return provider
+
+@router.post("/{provider_id}/archive")
+async def archive_provider(
+    provider_id: int,
+    db: AsyncSession = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_admin),
+    provider_ids: Optional[list[int]] = Depends(deps.get_user_provider_ids)
+) -> Any:
+    if provider_ids is not None and provider_id not in provider_ids:
+        raise HTTPException(status_code=403, detail="Not authorized for this provider")
+    stmt = select(MonitoringProvider).where(MonitoringProvider.id == provider_id, MonitoringProvider.deleted_at.is_(None))
+    result = await db.execute(stmt)
+    provider = result.scalar_one_or_none()
+    if not provider:
+        raise HTTPException(status_code=404, detail="Provider not found")
+    
+    provider.is_archived = True
+    audit = AuditLog(user_id=current_user.id, action="ARCHIVE_PROVIDER", target_type="PROVIDER", target_id=str(provider_id))
+    db.add(audit)
+    await db.commit()
+    return {"status": "success", "message": "Provider archived"}
+
+@router.post("/{provider_id}/restore")
+async def restore_provider(
+    provider_id: int,
+    db: AsyncSession = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_super_admin),
+) -> Any:
+    stmt = select(MonitoringProvider).where(MonitoringProvider.id == provider_id)
+    result = await db.execute(stmt)
+    provider = result.scalar_one_or_none()
+    if not provider:
+        raise HTTPException(status_code=404, detail="Provider not found")
+    
+    provider.deleted_at = None
+    provider.is_archived = False
+    audit = AuditLog(user_id=current_user.id, action="RESTORE_PROVIDER", target_type="PROVIDER", target_id=str(provider_id))
+    db.add(audit)
+    await db.commit()
+    return {"status": "success", "message": "Provider restored"}
 
 @router.delete("/{provider_id}")
 async def delete_provider(
     provider_id: int,
     db: AsyncSession = Depends(deps.get_db),
-    current_user: User = Depends(deps.get_current_active_admin),
+    current_user: User = Depends(deps.get_current_super_admin),
 ) -> Any:
-    """Delete a provider."""
-    stmt = delete(MonitoringProvider).where(MonitoringProvider.id == provider_id)
-    await db.execute(stmt)
+    """Soft delete a provider (trash 30 days)."""
+    stmt = select(MonitoringProvider).where(MonitoringProvider.id == provider_id)
+    result = await db.execute(stmt)
+    provider = result.scalar_one_or_none()
+    if not provider:
+        raise HTTPException(status_code=404, detail="Provider not found")
+        
+    from datetime import datetime, timezone
+    provider.deleted_at = datetime.now(timezone.utc)
+    audit = AuditLog(user_id=current_user.id, action="DELETE_PROVIDER", target_type="PROVIDER", target_id=str(provider_id))
+    db.add(audit)
     await db.commit()
-    return {"status": "success"}
+    return {"status": "success", "message": "Provider soft deleted (30 days trash)"}
 
 # --- SMTP Rules (Whitelist & Frequency) ---
 

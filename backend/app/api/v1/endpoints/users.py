@@ -9,7 +9,8 @@ from sqlalchemy import select
 
 from app.auth import deps
 from app.auth import security
-from app.db.models import User
+from app.db.models import User, UserProvider, AuditLog
+from sqlalchemy import delete
 from app.schemas.user import UserCreate, UserUpdate, UserOut
 
 router = APIRouter()
@@ -20,10 +21,17 @@ router = APIRouter()
 @router.get("/me", response_model=UserOut)
 async def read_user_me(
     current_user: User = Depends(deps.get_current_user),
+    db: AsyncSession = Depends(deps.get_db),
 ) -> Any:
     """
-    Get current user.
+    Get current user with providers if applicable.
     """
+    if current_user.role != "SUPER_ADMIN":
+        stmt = select(UserProvider.provider_id).where(UserProvider.user_id == current_user.id)
+        result = await db.execute(stmt)
+        current_user.provider_ids = list(result.scalars().all())
+    else:
+        current_user.provider_ids = None
     return current_user
 
 # -----------------------------------------------------------------------------
@@ -42,6 +50,20 @@ async def read_users(
     query = select(User).offset(skip).limit(limit)
     result = await db.execute(query)
     users = result.scalars().all()
+    
+    if users:
+        user_ids = [u.id for u in users]
+        up_stmt = select(UserProvider).where(UserProvider.user_id.in_(user_ids))
+        up_result = await db.execute(up_stmt)
+        user_providers = up_result.scalars().all()
+        
+        up_map = {u.id: [] for u in users}
+        for up in user_providers:
+            up_map[up.user_id].append(up.provider_id)
+            
+        for u in users:
+            u.provider_ids = up_map[u.id] if u.role != "SUPER_ADMIN" else None
+
     return users
 
 # -----------------------------------------------------------------------------
@@ -79,6 +101,15 @@ async def create_user(
     db.add(db_user)
     await db.commit()
     await db.refresh(db_user)
+    
+    if user_in.provider_ids is not None:
+        for p_id in user_in.provider_ids:
+            db.add(UserProvider(user_id=db_user.id, provider_id=p_id))
+        db_user.provider_ids = user_in.provider_ids
+            
+    audit = AuditLog(user_id=current_user.id, action="CREATE_USER", target_type="USER", target_id=str(db_user.id), payload={"role": user_in.role})
+    db.add(audit)
+    await db.commit()
     return db_user
 
 # -----------------------------------------------------------------------------
@@ -116,8 +147,25 @@ async def update_user(
         setattr(user, field, value)
 
     db.add(user)
+    
+    if user_in.provider_ids is not None:
+        await db.execute(delete(UserProvider).where(UserProvider.user_id == user.id))
+        for p_id in set(user_in.provider_ids):
+            db.add(UserProvider(user_id=user.id, provider_id=p_id))
+        user.provider_ids = user_in.provider_ids
+            
+    audit = AuditLog(user_id=current_user.id, action="UPDATE_USER", target_type="USER", target_id=str(user.id))
+    db.add(audit)
+    
     await db.commit()
     await db.refresh(user)
+    
+    if not hasattr(user, "provider_ids") or user.provider_ids is None:
+        # Fetch current if not updated to return proper model
+        up_stmt = select(UserProvider.provider_id).where(UserProvider.user_id == user.id)
+        up_result = await db.execute(up_stmt)
+        user.provider_ids = list(up_result.scalars().all())
+
     return user
 
 # -----------------------------------------------------------------------------

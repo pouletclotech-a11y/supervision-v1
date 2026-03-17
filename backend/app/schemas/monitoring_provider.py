@@ -27,11 +27,16 @@ class MonitoringProviderCreate(BaseModel):
     accepted_attachment_types: List[str] = ["pdf", "xls", "xlsx"]
     email_match_keyword: Optional[str] = None
     expected_interval_minutes: Optional[int] = None
+    is_archived: bool = False
+    email_from: Optional[str] = None
+    email_scan_interval: Optional[int] = None
+    max_emails_per_day: int = 10
 
 class MonitoringProviderSchema(MonitoringProviderCreate):
     id: int
     last_successful_import_at: Optional[datetime] = None
     created_at: Optional[datetime] = None
+    deleted_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True
@@ -49,6 +54,10 @@ class MonitoringProviderUpdate(BaseModel):
     accepted_attachment_types: Optional[List[str]] = None
     email_match_keyword: Optional[str] = None
     expected_interval_minutes: Optional[int] = None
+    is_archived: Optional[bool] = None
+    email_from: Optional[str] = None
+    email_scan_interval: Optional[int] = None
+    max_emails_per_day: Optional[int] = None
 
 class ProviderHealthStatus(BaseModel):
     id: int

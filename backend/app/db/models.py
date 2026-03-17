@@ -139,6 +139,11 @@ class DBIngestionProfile(Base):
     # Phase 2: Ingestion Déterministe
     format_kind: Mapped[str] = mapped_column(String(50), default="XLSX_NATIVE")
     action_config: Mapped[Optional[dict]] = mapped_column(JSONB, default={})
+    
+    # Configuration
+    allowed_extensions: Mapped[list] = mapped_column(JSONB, default=["pdf", "xls", "xlsx"])
+    required_text: Mapped[Optional[str]] = mapped_column(String(255))
+
     filename_regex: Mapped[Optional[str]] = mapped_column(String(255))
     
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
@@ -272,7 +277,25 @@ class MonitoringProvider(Base):
     # Phase Security V3: Daily Quota
     max_emails_per_day: Mapped[int] = mapped_column(Integer, default=10)
 
+    # Lifecycle & Configuration
+    is_archived: Mapped[bool] = mapped_column(Boolean, default=False)
+    deleted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    email_from: Mapped[Optional[str]] = mapped_column(String(255))
+    email_scan_interval: Mapped[Optional[int]] = mapped_column(Integer)
+
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+class UserProvider(Base):
+    __tablename__ = "user_providers"
+    
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    provider_id: Mapped[int] = mapped_column(ForeignKey("monitoring_providers.id", ondelete="CASCADE"), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint('user_id', 'provider_id', name='uq_user_provider_unique'),
+    )
 
 class SmtpProviderRule(Base):
     __tablename__ = "smtp_provider_rules"

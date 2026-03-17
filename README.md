@@ -27,5 +27,8 @@ Drop `.pdf` or `.xls` files into the `dropbox_in/` folder.
 - **Events**: http://localhost:8000/api/v1/events/
 - **Debug**: http://localhost:8000/api/v1/debug/sample
 
+### 4. Admin Utils
+- **Purge Trash**: `docker compose exec backend python scripts/purge_trash.py --days 30`
+
 ## License
 Proprietary.

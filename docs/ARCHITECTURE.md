@@ -24,20 +24,26 @@ These components are considered mature and should not be modified without signif
 #### 2. Backend API (`backend/app/api`)
 - **Role**: Serves data to the frontend and provides debug endpoints.
 - **Framework**: FastAPI (Python 3.11).
-- **Security**: JWT Authentication + RBAC (Admin/Operator/Viewer).
+- **Security**: JWT Authentication + RBAC (`SUPER_ADMIN`, `ADMIN`, `OPERATOR`, `VIEWER`).
+    - `SUPER_ADMIN` contourne les filtres et a un accès exclusif à la création, la restauration et la suppression physique/logique (corbeille).
+    - `ADMIN`, `OPERATOR`, `VIEWER` sont cloisonnés via la table `user_providers`.
+- **Audit Logging**: Toutes les actions de modification (création/mise à jour d'utilisateurs, gestion du cycle de vie des providers, etc.) génèrent un événement dans `audit_logs`.
 - **Key Endpoints**:
     - `/api/v1/auth/login`: Authentication.
     - `/api/v1/imports`: Import logs and status (Secured).
     - `/api/v1/events`: Normalized event stream (Secured).
+    - `/api/v1/admin/providers`: Provider CRUD + Lifecycle (`/archive`, `/restore`, `DELETE`).
     - `/uploads`: Static file service for user profile photos (Public Read/Auth Write).
 
 #### 3. Database Layer
 - **Primary DB**: Postgres 16 (TimescaleDB extension enabled).
 - **Tables**:
-    - `users`: Credentials and Roles.
+    - `users`: Credentials and Roles (`SUPER_ADMIN`, `ADMIN`, etc.).
+    - `user_providers`: Table d'association entre utilisateurs et providers autorisés pour le cloisonnement des données.
     - `events`: Hypertable (partitioned by time).
     - `imports`: Job logs.
     - `alert_rules`: Configuration for detection engine.
+    - `audit_logs`: Journalisation des actions critiques de l'API (RBAC et providers).
 - **ORM**: SQLAlchemy (Async).
 
 #### 4. Cache & Queue

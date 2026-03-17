@@ -295,7 +295,7 @@ class ExcelParser(BaseParser):
                 else:
                     # Backward compatibility for existing logic if mapping empty (Phase transition)
                     try:
-                        processed = self._process_row(row, row_idx, file_path, ctx_site_code, ctx_site_code_raw, ctx_client_name, ctx_day, ctx_date, is_histo, source_timezone, provider_code=provider_code, last_ts=last_ts)
+                        processed = self._process_row(row, row_idx, file_path, ctx_site_code, ctx_site_code_raw, ctx_client_name, ctx_day, ctx_date, is_histo, source_timezone, provider_code=provider_code, last_ts=last_ts, parser_config=parser_config)
                         if processed:
                             evt, ctx_site_code, ctx_site_code_raw, ctx_client_name, ctx_day, ctx_date = processed
                             if evt: 
@@ -314,9 +314,9 @@ class ExcelParser(BaseParser):
             
         return events
 
-    def _process_row(self, clean_row, row_idx, file_path, ctx_site_code, ctx_site_code_raw, ctx_client_name, ctx_day, ctx_date, is_histo=False, source_timezone="UTC", is_efi=False, provider_code=None, last_ts=None):
+    def _process_row(self, clean_row, row_idx, file_path, ctx_site_code, ctx_site_code_raw, ctx_client_name, ctx_day, ctx_date, is_histo=False, source_timezone="UTC", is_efi=False, provider_code=None, last_ts=None, parser_config=None):
         if is_histo:
-            return self._process_row_histo(clean_row, row_idx, file_path, ctx_site_code, ctx_site_code_raw, ctx_client_name, ctx_day, ctx_date, source_timezone, provider_code=provider_code, last_ts=last_ts)
+            return self._process_row_histo(clean_row, row_idx, file_path, ctx_site_code, ctx_site_code_raw, ctx_client_name, ctx_day, ctx_date, source_timezone, provider_code=provider_code, last_ts=last_ts, parser_config=parser_config)
         
         col_a, col_b, col_c, col_d, col_e, col_f, col_g = [clean_excel_value(c) for c in clean_row[:7]]
 
@@ -427,7 +427,8 @@ class ExcelParser(BaseParser):
         
         return event, ctx_site_code, ctx_site_code_raw, ctx_client_name, ctx_day, ctx_date
 
-    def _process_row_histo(self, clean_row, row_idx, file_path, ctx_site_code, ctx_site_code_raw, ctx_client_name, ctx_day, ctx_date, source_timezone="UTC", provider_code=None, last_ts=None):
+    def _process_row_histo(self, clean_row, row_idx, file_path, ctx_site_code, ctx_site_code_raw, ctx_client_name, ctx_day, ctx_date, source_timezone="UTC", provider_code=None, last_ts=None, parser_config=None):
+        if parser_config is None: parser_config = {}
         # Format YPSILON_HISTO:
         # Col 0 (A): Site code
         # Col 1 (B): Client name
@@ -482,7 +483,8 @@ class ExcelParser(BaseParser):
                         continue
         
         if not ts or not ctx_site_code:
-            if provider_code == "CORS" and col_action == "OPERATOR_ACTION" and last_ts and ctx_site_code:
+            allow_ts_carry = parser_config.get("allow_timestamp_carry_over_for_actions", [])
+            if col_action in allow_ts_carry and last_ts and ctx_site_code:
                 ts = last_ts
             else:
                 return None, ctx_site_code, ctx_site_code_raw, ctx_client_name, ctx_day, ctx_date

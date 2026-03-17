@@ -8,7 +8,7 @@ from pydantic import ValidationError
 
 from app.db.session import AsyncSessionLocal
 from app.auth import security
-from app.db.models import User
+from app.db.models import User, UserProvider
 
 # OAuth2 Scheme
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login/access-token")
@@ -48,7 +48,7 @@ async def get_current_user(
 def get_current_active_admin(
     current_user: User = Depends(get_current_user),
 ) -> User:
-    if current_user.role != "ADMIN":
+    if current_user.role not in ["ADMIN", "SUPER_ADMIN"]:
         raise HTTPException(
             status_code=403, detail="The user doesn't have enough privileges"
         )
@@ -57,8 +57,30 @@ def get_current_active_admin(
 def get_current_operator_or_admin(
     current_user: User = Depends(get_current_user),
 ) -> User:
-    if current_user.role not in ["ADMIN", "OPERATOR"]:
+    if current_user.role not in ["ADMIN", "SUPER_ADMIN", "OPERATOR"]:
          raise HTTPException(
             status_code=403, detail="The user doesn't have enough privileges"
         )
     return current_user
+
+def get_current_super_admin(
+    current_user: User = Depends(get_current_user),
+) -> User:
+    if current_user.role != "SUPER_ADMIN":
+        raise HTTPException(
+            status_code=403, detail="The user doesn't have enough privileges. Super Admin required."
+        )
+    return current_user
+
+async def get_user_provider_ids(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+) -> Optional[list[int]]:
+    """Retourne la liste des IDs de providers autorisés, ou None si SUPER_ADMIN (accès à tout)."""
+    if current_user.role == "SUPER_ADMIN":
+        return None
+    
+    stmt = select(UserProvider.provider_id).where(UserProvider.user_id == current_user.id)
+    result = await db.execute(stmt)
+    return list(result.scalars().all())
+

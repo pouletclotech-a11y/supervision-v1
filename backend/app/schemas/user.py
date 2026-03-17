@@ -11,8 +11,10 @@ class UserBase(BaseModel):
 
 class UserCreate(UserBase):
     password: str
+    provider_ids: Optional[list[int]] = None
 
 class UserUpdate(BaseModel):
+    provider_ids: Optional[list[int]] = None
     role: Optional[str] = None
     password: Optional[str] = None
     is_active: Optional[bool] = None
@@ -23,5 +25,6 @@ class UserOut(UserBase):
     id: int
     created_at: datetime
     last_login_at: Optional[datetime] = None
+    provider_ids: Optional[list[int]] = None
 
     model_config = ConfigDict(from_attributes=True)
