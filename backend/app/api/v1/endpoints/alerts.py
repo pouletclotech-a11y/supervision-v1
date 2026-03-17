@@ -9,7 +9,7 @@ from app.db.models import AlertRule, Event, ReplayJob, User, RuleCondition, Even
 from app.schemas.response_models import AlertRuleOut, AlertRuleCreate, AlertRuleUpdate, AlertListResponse, AlertListItem
 from app.services.alerting import AlertingService
 from app.services.repository import EventRepository
-from app.auth.deps import get_current_operator_or_admin
+from app.auth.deps import get_current_operator_or_admin, get_user_provider_ids
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -25,7 +25,8 @@ async def list_alerts(
     sort_by: str = "created_at",
     sort_order: str = "desc",
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_operator_or_admin)
+    current_user: User = Depends(get_current_operator_or_admin),
+    provider_ids: Optional[list[int]] = Depends(get_user_provider_ids)
 ) -> Any:
     """
     Phase 3: Paginated & Filtered alerts list.
@@ -62,6 +63,8 @@ async def list_alerts(
         stmt = stmt.where(MonitoringProvider.code == provider)
     if site_code:
         stmt = stmt.where(Event.site_code == site_code)
+    if provider_ids is not None:
+        stmt = stmt.where(MonitoringProvider.id.in_(provider_ids))
 
     # Total count
     count_stmt = select(func.count()).select_from(stmt.subquery())
@@ -93,11 +96,12 @@ async def get_active_alerts(
     skip: int = 0,
     limit: int = 100,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_operator_or_admin)
+    current_user: User = Depends(get_current_operator_or_admin),
+    provider_ids: Optional[list[int]] = Depends(get_user_provider_ids)
 ) -> Any:
     """Get currently active alerts."""
     repo = EventRepository(db)
-    return await repo.get_active_alerts(skip=skip, limit=limit)
+    return await repo.get_active_alerts(skip=skip, limit=limit, provider_ids=provider_ids)
 
 @router.get("/archived", response_model=List[Any])
 async def get_archived_alerts(
@@ -105,11 +109,12 @@ async def get_archived_alerts(
     skip: int = 0,
     limit: int = 100,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_operator_or_admin)
+    current_user: User = Depends(get_current_operator_or_admin),
+    provider_ids: Optional[list[int]] = Depends(get_user_provider_ids)
 ) -> Any:
     """Get archived alerts for the last N days."""
     repo = EventRepository(db)
-    return await repo.get_archived_alerts(days=days, skip=skip, limit=limit)
+    return await repo.get_archived_alerts(days=days, skip=skip, limit=limit, provider_ids=provider_ids)
 
 
 @router.get("/rules", response_model=List[AlertRuleOut])

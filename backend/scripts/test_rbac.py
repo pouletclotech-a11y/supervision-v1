@@ -2,9 +2,23 @@ import asyncio
 from sqlalchemy import select
 from app.db.session import AsyncSessionLocal
 from app.db.models import User, MonitoringProvider, UserProvider, AuditLog
+from sqlalchemy import delete
 
 async def test_roles():
     async with AsyncSessionLocal() as session:
+        # Clean up previous runs
+        user_emails = ["super2@test.com", "admin2@test.com", "viewer2@test.com"]
+        stmt_users = select(User.id).where(User.email.in_(user_emails))
+        user_ids = list((await session.execute(stmt_users)).scalars().all())
+        
+        if user_ids:
+            await session.execute(delete(AuditLog).where(AuditLog.user_id.in_(user_ids)))
+            await session.execute(delete(UserProvider).where(UserProvider.user_id.in_(user_ids)))
+            await session.execute(delete(User).where(User.id.in_(user_ids)))
+            
+        await session.execute(delete(MonitoringProvider).where(MonitoringProvider.code.in_(["P98", "P99"])))
+        await session.commit()
+        
         # Create test users
         super_admin = User(email="super2@test.com", hashed_password="pw", role="SUPER_ADMIN", full_name="Super")
         admin = User(email="admin2@test.com", hashed_password="pw", role="ADMIN", full_name="Admin")
@@ -30,6 +44,8 @@ async def test_roles():
         print("Test roles and DB integrity OK")
         
         # Cleanup
+        # We need to delete AuditLog entries referencing these users before deleting them
+        await session.execute(delete(AuditLog).where(AuditLog.user_id.in_([super_admin.id, admin.id, viewer.id])))
         await session.delete(super_admin)
         await session.delete(admin)
         await session.delete(viewer)

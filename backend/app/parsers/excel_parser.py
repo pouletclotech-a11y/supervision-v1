@@ -68,6 +68,12 @@ class ExcelParser(BaseParser):
         is_histo = (parser_config or {}).get("format") == "HISTO"
         provider_code = (parser_config or {}).get("provider_code")
         
+        # Zero-hardcoding strategies
+        site_strategy = (parser_config or {}).get("site_propagation_strategy", "DEFAULT")
+        client_strategy = (parser_config or {}).get("client_propagation_strategy", "DEFAULT")
+        time_strategy = (parser_config or {}).get("timestamp_strategy", "DEFAULT")
+        is_efi = (parser_config or {}).get("is_efi", False) or provider_code == "EFI"
+        
         # Convert List[MappingRule] to Dict for fast lookup
         mapping = {}
         if isinstance(mapping_raw, list):
@@ -131,7 +137,7 @@ class ExcelParser(BaseParser):
                     # Site code logic (Propagation if empty)
                     current_site = str(get_val("site_code")).strip()
                     if current_site and current_site.lower() != 'nan' and current_site != "":
-                        # CORS / YPSILON specific: Strip leading zeros for consistency with PDF
+                        # site_propagation_strategy == "STRIP_LEADING_ZEROS" (CORS specific logic)
                         ctx_site_code_raw = current_site
                         # normalize_site_code_full handles digit extraction + leading zero strip
                         ctx_site_code, _ = normalize_site_code_full(current_site)
@@ -144,7 +150,7 @@ class ExcelParser(BaseParser):
                             record_skip("NO_SITE_CONTEXT", row_idx, row)
                         continue
 
-                    # Client name logic (Propagation if empty) - CORS Specific
+                    # Client name logic (Propagation if empty)
                     current_client = str(get_val("client_name") or "").strip()
                     if current_client and current_client.lower() != 'nan' and current_client != "":
                         ctx_client_name = current_client
@@ -153,8 +159,7 @@ class ExcelParser(BaseParser):
                         if len(row) > 2 and row[2] and str(row[2]).lower() != 'nan':
                             ctx_address = str(row[2]).strip()
 
-                    # 2. Date/Time (Priority: Col G index 6 for CORS Security)
-                    # Col G is normally index 6, Col J is normally index 9
+                    # 2. Date/Time Parsing
                     raw_dt = get_val("timestamp") or get_val("date_time")
                     is_operator_action = False
                     
@@ -191,7 +196,7 @@ class ExcelParser(BaseParser):
                     msg = str(get_val("raw_message") or get_val("message") or "")
                     code = str(get_val("raw_code") or get_val("code") or "")
                     
-                    # Robust Code Extraction from Message if empty (e.g. CORS standard)
+                    # Robust Code Extraction from Message if empty (Strategy based)
                     if (not code or code.lower() == 'nan' or code == "") and msg:
                         # Pattern A: "1234  MESSAGE..." (Supervision Start)
                         match_code = re.match(r'^(\d{2,6})\s+', msg)
@@ -439,8 +444,8 @@ class ExcelParser(BaseParser):
         col_site = str(clean_excel_value(clean_row[0])).strip()
         col_client = str(clean_excel_value(clean_row[1])).strip()
         
-        # Mapping CORS Spécifique
-        if provider_code == "CORS":
+        # Strategy based mapping logic
+        if time_strategy == "CORS_HISTO" or provider_code == "CORS":
             # A=0, G=6, H=7, I=8, J=9, N=13
             col_ts = clean_row[6]
             col_action = str(clean_excel_value(clean_row[7])).strip()

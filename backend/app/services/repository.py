@@ -847,10 +847,18 @@ class AdminRepository:
             
         return health_reports
 
-    async def get_active_alerts(self, skip: int = 0, limit: int = 100) -> List[dict]:
+    async def get_active_alerts(self, skip: int = 0, limit: int = 100, provider_ids: Optional[list[int]] = None) -> List[dict]:
         """
         Retrieves currently active alerts (Latest Hit > Latest Disparition).
         """
+        if provider_ids is not None and len(provider_ids) == 0:
+            return []
+            
+        provider_filter = ""
+        if provider_ids is not None:
+            ids_str = ",".join(map(str, provider_ids))
+            provider_filter = f"AND p.id IN ({ids_str})"
+            
         # Using a raw SQL approach for complex grouping/joining logic
         # We group by site_code, rule_name, and zone_id (from metadata)
         sql = """
@@ -890,7 +898,7 @@ class AdminRepository:
             AND (d.zone_id = h.zone_id OR (d.zone_id IS NULL AND h.zone_id IS NULL))
         JOIN site_connections s ON s.code_site = h.site_code
         JOIN monitoring_providers p ON p.id = s.provider_id
-        WHERE d.last_disp_time IS NULL OR d.last_disp_time < h.last_hit_time
+        WHERE (d.last_disp_time IS NULL OR d.last_disp_time < h.last_hit_time) {provider_filter}
         ORDER BY h.last_hit_time DESC
         OFFSET :skip LIMIT :limit
         """
@@ -898,11 +906,19 @@ class AdminRepository:
         result = await self.session.execute(text(sql), {"skip": skip, "limit": limit})
         return [dict(row._mapping) for row in result]
 
-    async def get_archived_alerts(self, days: int = 7, skip: int = 0, limit: int = 100) -> List[dict]:
+    async def get_archived_alerts(self, days: int = 7, skip: int = 0, limit: int = 100, provider_ids: Optional[list[int]] = None) -> List[dict]:
         """
         Retrieves archived alerts (Disparition occurred after the hit).
         """
-        sql = """
+        if provider_ids is not None and len(provider_ids) == 0:
+            return []
+            
+        provider_filter = ""
+        if provider_ids is not None:
+            ids_str = ",".join(map(str, provider_ids))
+            provider_filter = f"AND p.id IN ({ids_str})"
+            
+        sql = f"""
         WITH latest_hits AS (
             SELECT 
                 erh.rule_name,
@@ -942,6 +958,7 @@ class AdminRepository:
         JOIN monitoring_providers p ON p.id = s.provider_id
         WHERE d.last_disp_time >= h.last_hit_time
           AND d.last_disp_time >= NOW() - INTERVAL '1 day' * :days
+          {provider_filter}
         ORDER BY d.last_disp_time DESC
         OFFSET :skip LIMIT :limit
         """

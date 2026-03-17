@@ -138,6 +138,11 @@ async def update_user(
 
     update_data = user_in.model_dump(exclude_unset=True)
     
+    audit_payload = {}
+    
+    if "role" in update_data and update_data["role"] != user.role:
+        audit_payload["role_change"] = {"from": user.role, "to": update_data["role"]}
+    
     if "password" in update_data and update_data["password"]:
         hashed_password = security.get_password_hash(update_data["password"])
         del update_data["password"]
@@ -149,12 +154,17 @@ async def update_user(
     db.add(user)
     
     if user_in.provider_ids is not None:
+        up_stmt = select(UserProvider.provider_id).where(UserProvider.user_id == user.id)
+        current_providers = list((await db.execute(up_stmt)).scalars().all())
+        if set(current_providers) != set(user_in.provider_ids):
+            audit_payload["providers_change"] = {"from": current_providers, "to": user_in.provider_ids}
+
         await db.execute(delete(UserProvider).where(UserProvider.user_id == user.id))
         for p_id in set(user_in.provider_ids):
             db.add(UserProvider(user_id=user.id, provider_id=p_id))
         user.provider_ids = user_in.provider_ids
             
-    audit = AuditLog(user_id=current_user.id, action="UPDATE_USER", target_type="USER", target_id=str(user.id))
+    audit = AuditLog(user_id=current_user.id, action="UPDATE_USER", target_type="USER", target_id=str(user.id), payload=audit_payload)
     db.add(audit)
     
     await db.commit()
@@ -200,6 +210,10 @@ async def delete_user(
 
     user.is_active = False
     db.add(user)
+    
+    audit = AuditLog(user_id=current_user.id, action="DELETE_USER", target_type="USER", target_id=str(user.id))
+    db.add(audit)
+    
     await db.commit()
     await db.refresh(user)
     return user

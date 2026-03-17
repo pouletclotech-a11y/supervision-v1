@@ -1,7 +1,8 @@
 from datetime import datetime
 import os
 from typing import List, Any, Optional
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
+from app.auth import deps
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc
 from app.db.session import get_db
@@ -18,7 +19,8 @@ async def read_imports(
     status: Optional[str] = None,
     date_from: Optional[datetime] = None,
     date_to: Optional[datetime] = None,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    provider_ids: Optional[list[int]] = Depends(deps.get_user_provider_ids)
 ) -> Any:
     """
     Retrieve file import history with filters and pagination.
@@ -34,6 +36,8 @@ async def read_imports(
         base_stmt = base_stmt.where(ImportLog.created_at >= date_from)
     if date_to:
         base_stmt = base_stmt.where(ImportLog.created_at <= date_to)
+    if provider_ids is not None:
+        base_stmt = base_stmt.where(ImportLog.provider_id.in_(provider_ids))
 
     # Count Total
     count_stmt = select(func.count()).select_from(base_stmt.subquery())
@@ -163,9 +167,15 @@ async def read_imports(
     }
 
 @router.get("/{id}/quality-report")
-async def get_quality_report(id: int, db: AsyncSession = Depends(get_db)):
+async def get_quality_report(
+    id: int, 
+    db: AsyncSession = Depends(get_db),
+    provider_ids: Optional[list[int]] = Depends(deps.get_user_provider_ids)
+):
     """Fetch full quality report JSONB."""
     stmt = select(ImportLog).where(ImportLog.id == id)
+    if provider_ids is not None:
+        stmt = stmt.where(ImportLog.provider_id.in_(provider_ids))
     result = await db.execute(stmt)
     log = result.scalar_one_or_none()
     if not log:
@@ -173,9 +183,15 @@ async def get_quality_report(id: int, db: AsyncSession = Depends(get_db)):
     return log.quality_report or {}
 
 @router.get("/{id}/pdf-match-report")
-async def get_pdf_match_report(id: int, db: AsyncSession = Depends(get_db)):
+async def get_pdf_match_report(
+    id: int, 
+    db: AsyncSession = Depends(get_db),
+    provider_ids: Optional[list[int]] = Depends(deps.get_user_provider_ids)
+):
     """Fetch full PDF match report JSONB."""
     stmt = select(ImportLog).where(ImportLog.id == id)
+    if provider_ids is not None:
+        stmt = stmt.where(ImportLog.provider_id.in_(provider_ids))
     result = await db.execute(stmt)
     log = result.scalar_one_or_none()
     if not log:
@@ -194,7 +210,8 @@ async def read_import_events(
     rule_name: Optional[str] = None,
     action_filter: Optional[str] = None,
     code_filter: Optional[str] = None,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    provider_ids: Optional[list[int]] = Depends(deps.get_user_provider_ids)
 ) -> Any:
     """
     Retrieve events for a specific import job with filters, pagination, and sorting.
@@ -203,6 +220,12 @@ async def read_import_events(
 
     # Base Query
     base_stmt = select(Event).where(Event.import_id == id)
+    
+    if provider_ids is not None:
+        # Validate that this import belongs to the user's allowed providers
+        stmt_import = select(ImportLog.id).where(ImportLog.id == id, ImportLog.provider_id.in_(provider_ids))
+        if not (await db.execute(stmt_import)).scalar_one_or_none():
+            raise HTTPException(status_code=403, detail="Not authorized to view events for this import")
     
     if unmatched_only:
         base_stmt = base_stmt.where((Event.normalized_type == 'UNKNOWN') | (Event.normalized_type.is_(None)))
@@ -268,13 +291,16 @@ import os
 async def download_archived_file(
     id: int,
     file_type: str = 'source', # 'source' or 'pdf'
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    provider_ids: Optional[list[int]] = Depends(deps.get_user_provider_ids)
 ):
     """
     Download or view the archived file.
     file_type: 'source' (XLS/CSV) or 'pdf' (Linked PDF)
     """
     stmt = select(ImportLog).where(ImportLog.id == id)
+    if provider_ids is not None:
+        stmt = stmt.where(ImportLog.provider_id.in_(provider_ids))
     result = await db.execute(stmt)
     log = result.scalar_one_or_none()
     
@@ -314,12 +340,15 @@ from app.services.inspection_service import InspectionService
 @router.get("/{id}/inspect")
 async def inspect_import(
     id: int,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    provider_ids: Optional[list[int]] = Depends(deps.get_user_provider_ids)
 ):
     """
     Inspect the archived file to extract headers/text and suggest a profile.
     """
     stmt = select(ImportLog).where(ImportLog.id == id)
+    if provider_ids is not None:
+        stmt = stmt.where(ImportLog.provider_id.in_(provider_ids))
     result = await db.execute(stmt)
     log = result.scalar_one_or_none()
     
@@ -335,7 +364,8 @@ async def inspect_import(
 @router.get("/{id}/diagnostic")
 async def get_import_diagnostic(
     id: int,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    provider_ids: Optional[list[int]] = Depends(deps.get_user_provider_ids)
 ):
     """
     Diagnostic complet pour comprendre les écarts PDF/XLS.
@@ -343,6 +373,8 @@ async def get_import_diagnostic(
     from sqlalchemy import func
     
     stmt = select(ImportLog).where(ImportLog.id == id)
+    if provider_ids is not None:
+        stmt = stmt.where(ImportLog.provider_id.in_(provider_ids))
     result = await db.execute(stmt)
     log = result.scalar_one_or_none()
     

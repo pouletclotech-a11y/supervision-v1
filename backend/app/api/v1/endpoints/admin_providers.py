@@ -76,13 +76,18 @@ async def update_provider(
         raise HTTPException(status_code=404, detail="Provider not found")
     
     update_data = provider_in.model_dump(exclude_unset=True)
+    audit_payload = {}
     for field, value in update_data.items():
+        current_val = getattr(provider, field)
+        if value != current_val:
+            audit_payload[field] = {"from": current_val, "to": value}
+            
         if field == "code" and value is not None:
             setattr(provider, field, value.upper())
         else:
             setattr(provider, field, value)
             
-    audit = AuditLog(user_id=current_user.id, action="UPDATE_PROVIDER", target_type="PROVIDER", target_id=str(provider_id))
+    audit = AuditLog(user_id=current_user.id, action="UPDATE_PROVIDER", target_type="PROVIDER", target_id=str(provider_id), payload=audit_payload)
     db.add(audit)
     await db.commit()
     await db.refresh(provider)
@@ -108,6 +113,27 @@ async def archive_provider(
     db.add(audit)
     await db.commit()
     return {"status": "success", "message": "Provider archived"}
+
+@router.post("/{provider_id}/unarchive")
+async def unarchive_provider(
+    provider_id: int,
+    db: AsyncSession = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_admin),
+    provider_ids: Optional[list[int]] = Depends(deps.get_user_provider_ids)
+) -> Any:
+    if provider_ids is not None and provider_id not in provider_ids:
+        raise HTTPException(status_code=403, detail="Not authorized for this provider")
+    stmt = select(MonitoringProvider).where(MonitoringProvider.id == provider_id, MonitoringProvider.deleted_at.is_(None))
+    result = await db.execute(stmt)
+    provider = result.scalar_one_or_none()
+    if not provider:
+        raise HTTPException(status_code=404, detail="Provider not found")
+    
+    provider.is_archived = False
+    audit = AuditLog(user_id=current_user.id, action="UNARCHIVE_PROVIDER", target_type="PROVIDER", target_id=str(provider_id))
+    db.add(audit)
+    await db.commit()
+    return {"status": "success", "message": "Provider unarchived"}
 
 @router.post("/{provider_id}/restore")
 async def restore_provider(
@@ -143,10 +169,13 @@ async def delete_provider(
         
     from datetime import datetime, timezone
     provider.deleted_at = datetime.now(timezone.utc)
+    # Also ensure it's not archived if deleted, to avoid state collision in UI logic
+    # provider.is_archived = False 
+    
     audit = AuditLog(user_id=current_user.id, action="DELETE_PROVIDER", target_type="PROVIDER", target_id=str(provider_id))
     db.add(audit)
     await db.commit()
-    return {"status": "success", "message": "Provider soft deleted (30 days trash)"}
+    return {"status": "success", "message": "Provider moved to trash (30 days)"}
 
 # --- SMTP Rules (Whitelist & Frequency) ---
 

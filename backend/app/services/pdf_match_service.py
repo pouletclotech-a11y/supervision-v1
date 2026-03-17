@@ -30,22 +30,22 @@ class PdfMatchService:
         ignore_case = provider_config.get("pdf_ignore_case", True)
         ignore_accents = provider_config.get("pdf_ignore_accents", True)
 
-        # 1. Normalize PDF Events for matching
-        # Key Builder strategy based on provider
+        # Strategy-based key building
+        strategy = provider_config.get("pdf_match_strategy", "DEFAULT")
+        
         def build_match_key(event: Any, source: str) -> str:
             # Common parts
             site = event.site_code or ""
             evt_dt = getattr(event, 'timestamp', getattr(event, 'time', None))
             dt = evt_dt.strftime("%Y-%m-%d %H:%M:%S") if evt_dt else ""
             
-            # Provider specific logic
-            if provider_code == "SPGO":
-                # SPGO: site + dt + code + action
+            if strategy == "SITE_TIME_CODE_ACTION":
+                # Matches SPGO-like logic
                 code = (event.raw_code or "").strip()
                 action = (getattr(event, 'status', getattr(event, 'severity', "")) or "").strip().upper()
                 return f"{site}|{dt}|{code}|{action}"
-            elif provider_code == "CORS":
-                # CORS: site + dt + code + normalized_message (action is inconsistent)
+            elif strategy == "SITE_TIME_CODE_MSGPREFIX":
+                # Matches CORS-like logic
                 msg_norm = normalize_text(event.raw_message or "")
                 # Extract code from message if not present
                 code = event.raw_code or ""
@@ -53,9 +53,9 @@ class PdfMatchService:
                     match_code = re.search(r'\$?(\d{3,})', msg_norm)
                     if match_code: code = match_code.group(1)
                 
-                return f"{site}|{dt}|{code}|{msg_norm[:20]}" # Simple prefix match for message
+                return f"{site}|{dt}|{code}|{msg_norm[:20]}"
             else:
-                # Default fallback key
+                # Default fallback key: SITE_TIME_MSGPREFIX
                 return f"{site}|{dt}|{normalize_text(event.raw_message or '')[:15]}"
 
         # Index PDF events
@@ -73,10 +73,8 @@ class PdfMatchService:
                 matched_count += 1
                 pdf_keys[key] -= 1
             else:
-                # Try fallback for CORS: ignore action if it was used
-                if provider_code == "CORS":
-                    # In CORS, we already exclude action from key, but let's be safe
-                    pass
+                # Try fallback: Check if strategy permits or defines fallback logic
+                pass
                 
                 if len(unmatched_samples) < 10:
                     evt_dt = getattr(e_evt, 'timestamp', getattr(e_evt, 'time', None))
@@ -104,7 +102,7 @@ class PdfMatchService:
             "pdf_events_count": len(pdf_events),
             "unmatched_count": total_excel - matched_count,
             "unmatched_samples": unmatched_samples,
-            "strategy_used": provider_code,
+            "strategy_used": strategy,
             "thresholds": {
                 "warning": provider_config.get("pdf_warning_threshold"),
                 "critical": provider_config.get("pdf_critical_threshold")

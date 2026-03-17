@@ -1,11 +1,11 @@
 """
-conftest.py — Fixtures partagées pour la suite de tests Phase 3.
+conftest.py — Specialized fixtures for Phase 3 testing with mandatory isolated DB.
 
-Stratégie :
-- `init_test_db` : crée les tables une seule fois (scope=session).
-- `db_cleanup`   : TRUNCATE avant chaque test (autouse=True) → isolation parfaite.
-- `db_session`   : engine dédié par test → pas de fuite de boucle asyncio.
-- `redis_client` : stub MagicMock → aucune dépendance Redis.
+Safety Strategy:
+- FORCE_TEST_DB: Automatically redirects SQLALCHEMY_DATABASE_URI to 'supervision_test'.
+- PROTECT_MAIN_DB: Explicitly raises RuntimeError if 'supervision' (main) is targeted.
+- init_test_db: Drop and recreate tables once per session on the test DB.
+- db_cleanup: DELETE from sensitive tables before each test for isolation.
 """
 
 import pytest
@@ -21,22 +21,38 @@ from app.core.config import settings
 # DB: create tables once per session
 # ──────────────────────────────────────────────
 
-@pytest_asyncio.fixture(scope="session")
+@pytest_asyncio.fixture(scope="session", autouse=True)
 async def init_test_db():
     """
-    Drop and recreate all tables once per pytest session.
-    Ensures the schema is exactly in sync with the current ORM models.
+    Drop and recreate all tables once per pytest session on the DEDICATED test database.
     """
-    init_engine = create_async_engine(settings.SQLALCHEMY_DATABASE_URI, echo=False)
-    # Protection Guard: Extract DB name from URI
+    # 1. Force the URI to point to supervision_test regardless of .env/settings
+    original_uri = settings.SQLALCHEMY_DATABASE_URI
+    if "supervision_test" not in original_uri:
+        # Construct the test URI
+        base_uri = original_uri.rsplit('/', 1)[0]
+        test_uri = f"{base_uri}/supervision_test"
+        settings.SQLALCHEMY_DATABASE_URI = test_uri
+        print(f"\n[TEST_GUARD] Redirecting DB to: {test_uri}")
+
+    # 2. Hard block against the main 'supervision' database
     db_name = settings.SQLALCHEMY_DATABASE_URI.split('/')[-1].split('?')[0]
+    if db_name == "supervision":
+        raise RuntimeError(
+            "CRITICAL SECURITY BLOCKED: Pytest attempted to run on the MAIN 'supervision' database. "
+            "Execution halted to prevent data loss."
+        )
+    
+    if not db_name.endswith("_test"):
+        raise RuntimeError(f"CRITICAL: Target database '{db_name}' does not end with '_test'. Aborting.")
+
+    init_engine = create_async_engine(settings.SQLALCHEMY_DATABASE_URI, echo=False)
     
     async with init_engine.begin() as conn:
-        if not db_name.endswith("_test") and settings.ENVIRONMENT != "test":
-             raise RuntimeError(f"CRITICAL: drop_all blocked! Database '{db_name}' is not a test database.")
-        
+        print(f"[TEST_DB] Initializing schema on {db_name}...")
         await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
+    
     yield
     await init_engine.dispose()
 

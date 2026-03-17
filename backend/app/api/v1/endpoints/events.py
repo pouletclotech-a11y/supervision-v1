@@ -1,5 +1,6 @@
-from typing import List, Any
+from typing import List, Any, Optional
 from fastapi import APIRouter, Depends, HTTPException
+from app.auth import deps
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc
 from app.db.session import get_db
@@ -13,12 +14,19 @@ router = APIRouter()
 async def read_events(
     skip: int = 0,
     limit: int = 50,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    provider_ids: Optional[list[int]] = Depends(deps.get_user_provider_ids)
 ) -> Any:
     """
     Retrieve latest events.
     """
-    stmt = select(Event).order_by(desc(Event.time)).offset(skip).limit(limit)
+    stmt = select(Event)
+    
+    if provider_ids is not None:
+        from app.db.models import ImportLog
+        stmt = stmt.join(ImportLog, Event.import_id == ImportLog.id).where(ImportLog.provider_id.in_(provider_ids))
+        
+    stmt = stmt.order_by(desc(Event.time)).offset(skip).limit(limit)
     result = await db.execute(stmt)
     events = result.scalars().all()
     
@@ -38,7 +46,8 @@ async def read_events(
 @router.get("/{id}", response_model=EventDetailOut)
 async def get_event_details(
     id: int,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    provider_ids: Optional[list[int]] = Depends(deps.get_user_provider_ids)
 ) -> Any:
     """
     Phase 3: Detailed view of a single event.
@@ -48,6 +57,11 @@ async def get_event_details(
 
     # Query event
     stmt = select(Event).where(Event.id == id)
+    
+    if provider_ids is not None:
+        from app.db.models import ImportLog
+        stmt = stmt.join(ImportLog, Event.import_id == ImportLog.id).where(ImportLog.provider_id.in_(provider_ids))
+        
     result = await db.execute(stmt)
     event = result.scalar_one_or_none()
     

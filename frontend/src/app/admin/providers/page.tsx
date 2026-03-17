@@ -8,9 +8,13 @@ import {
     CircularProgress, Alert, Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
     Tabs, Tab, List, ListItem, ListItemText, ListItemSecondaryAction, Divider
 } from '@mui/material';
-import { Edit3, RefreshCw, Zap, Mail, Activity, Clock, Shield, Plus, X, Globe, UserCheck, Archive, Eye, EyeOff, ArchiveRestore } from 'lucide-react';
+import { 
+    Edit3, RefreshCw, Zap, Mail, Activity, Clock, Shield, Plus, X, Globe, UserCheck, 
+    Archive, Eye, EyeOff, ArchiveRestore, Trash2, RotateCcw 
+} from 'lucide-react';
 import Layout from '../../../components/Layout';
 import { fetchWithAuth } from '@/lib/api';
+import { useAuth } from '@/context/AuthContext';
 
 interface SmtpRule {
     id?: number;
@@ -28,6 +32,8 @@ interface Provider {
     label: string;
     ui_color: string | null;
     is_active: boolean;
+    is_archived: boolean;
+    deleted_at: string | null;
     recovery_email: string | null;
     expected_emails_per_day: number;
     expected_frequency_type: string;
@@ -40,6 +46,9 @@ interface Provider {
 }
 
 export default function ProvidersPage() {
+    const { user } = useAuth();
+    const canEdit = user?.role === 'ADMIN' || user?.role === 'SUPER_ADMIN';
+
     const [providers, setProviders] = useState<Provider[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
@@ -47,7 +56,7 @@ export default function ProvidersPage() {
     const [providerRules, setProviderRules] = useState<SmtpRule[]>([]);
     const [tabIndex, setTabIndex] = useState(0);
     const [saveLoading, setSaveLoading] = useState(false);
-    const [showArchived, setShowArchived] = useState(false);
+    const [filterState, setFilterState] = useState<'ACTIVE' | 'ARCHIVED' | 'TRASH'>('ACTIVE');
 
     // Form states for adding rules/formats
     const [newRuleValue, setNewRuleValue] = useState('');
@@ -186,20 +195,53 @@ export default function ProvidersPage() {
         setNewFormat('');
     };
 
-    const handleArchiveToggle = async (provider: Provider) => {
+    const handleArchive = async (provider: Provider) => {
         try {
-            const res = await fetchWithAuth(`/admin/providers/${provider.id}`, {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ is_active: !provider.is_active })
+            const res = await fetchWithAuth(`/admin/providers/${provider.id}/archive`, {
+                method: 'POST'
             });
-            if (res.ok) {
-                await loadProviders();
-            }
+            if (res.ok) await loadProviders();
+            else alert("Échec de l'archivage");
         } catch (err) { alert("Action échouée"); }
     };
 
-    const displayProviders = providers.filter(p => showArchived || p.is_active);
+    const handleUnarchive = async (provider: Provider) => {
+        try {
+            const res = await fetchWithAuth(`/admin/providers/${provider.id}/unarchive`, {
+                method: 'POST'
+            });
+            if (res.ok) await loadProviders();
+            else alert("Échec du désarchivage");
+        } catch (err) { alert("Action échouée"); }
+    };
+
+    const handleSoftDelete = async (provider: Provider) => { 
+        if (!confirm(`Voulez-vous vraiment mettre '${provider.label}' à la corbeille ? Il ne traitera plus aucun fichier.`)) return;
+        try {
+            const res = await fetchWithAuth(`/admin/providers/${provider.id}`, {
+                method: 'DELETE'
+            });
+            if (res.ok) await loadProviders();
+            else alert("Échec de la mise à la corbeille");
+        } catch (err) { alert("Action échouée"); }
+    };
+
+    const handleRestore = async (provider: Provider) => {
+        try {
+            const res = await fetchWithAuth(`/admin/providers/${provider.id}/restore`, {
+                method: 'POST'
+            });
+            if (res.ok) await loadProviders();
+            else alert("Échec de la restauration");
+        } catch (err) { alert("Action échouée"); }
+    };
+
+    const displayProviders = providers.filter(p => {
+        if (filterState === 'ACTIVE') return p.is_active && !p.is_archived && !p.deleted_at;
+        if (filterState === 'ARCHIVED') return p.is_archived && !p.deleted_at;
+        if (filterState === 'TRASH') return !!p.deleted_at;
+        return true;
+    });
 
     return (
         <Layout>
@@ -213,27 +255,35 @@ export default function ProvidersPage() {
                             Configuration unifiée : Sécurité, Whitelist et Monitoring
                         </Typography>
                     </Box>
-                    <Box sx={{ display: 'flex', gap: 2 }}>
-                        <FormControlLabel
-                            control={<Switch size="small" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} />}
-                            label={<Typography variant="caption">Afficher archivés</Typography>}
-                            sx={{ mr: 2 }}
-                        />
-                        <Button
-                            variant="contained"
-                            color="success"
-                            startIcon={<Zap size={18} />}
-                            onClick={handleCreateNew}
+                    <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+                        <Tabs 
+                            value={filterState} 
+                            onChange={(_, val) => setFilterState(val)} 
+                            sx={{ minHeight: 32, '& .MuiTab-root': { py: 0.5, px: 1.5, minHeight: 32, fontSize: '0.75rem' } }}
                         >
-                            Nouveau Provider
-                        </Button>
-                        <Button
-                            startIcon={<RefreshCw size={18} />}
+                            <Tab label="Actifs" value="ACTIVE" />
+                            <Tab label="Archivés" value="ARCHIVED" />
+                            <Tab label="Corbeille" value="TRASH" />
+                        </Tabs>
+                        
+                        {canEdit && (
+                            <Button
+                                variant="contained"
+                                color="success"
+                                startIcon={<Zap size={18} />}
+                                onClick={handleCreateNew}
+                                size="small"
+                            >
+                                Nouveau
+                            </Button>
+                        )}
+                        <IconButton
                             onClick={loadProviders}
                             disabled={loading}
+                            size="small"
                         >
-                            Actualiser
-                        </Button>
+                            <RefreshCw size={18} />
+                        </IconButton>
                     </Box>
                 </Box>
 
@@ -285,12 +335,34 @@ export default function ProvidersPage() {
                                             {p.last_successful_import_at ? new Date(p.last_successful_import_at).toLocaleString('fr-FR') : '—'}
                                         </TableCell>
                                         <TableCell align="right">
-                                            <IconButton onClick={() => handleArchiveToggle(p)} size="small" color={p.is_active ? "default" : "warning"} title={p.is_active ? "Archiver" : "Restaurer"}>
-                                                {p.is_active ? <Archive size={18} /> : <ArchiveRestore size={18} />}
-                                            </IconButton>
-                                            <IconButton onClick={() => handleEdit(p)} size="small" color="primary">
-                                                <Edit3 size={18} />
-                                            </IconButton>
+                                            <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 0.5 }}>
+                                                {canEdit && filterState === 'ACTIVE' && (
+                                                    <IconButton onClick={() => handleArchive(p)} size="small" title="Archiver">
+                                                        <Archive size={18} />
+                                                    </IconButton>
+                                                )}
+                                                {canEdit && filterState === 'ARCHIVED' && (
+                                                    <IconButton onClick={() => handleUnarchive(p)} size="small" color="primary" title="Désarchiver">
+                                                        <RotateCcw size={18} />
+                                                    </IconButton>
+                                                )}
+                                                {canEdit && filterState === 'TRASH' ? (
+                                                    <IconButton onClick={() => handleRestore(p)} size="small" color="success" title="Restaurer">
+                                                        <RotateCcw size={18} />
+                                                    </IconButton>
+                                                ) : (
+                                                    <>
+                                                        <IconButton onClick={() => handleEdit(p)} size="small" color="primary" title={canEdit ? "Modifier" : "Voir"}>
+                                                            {canEdit ? <Edit3 size={18} /> : <Eye size={18} />}
+                                                        </IconButton>
+                                                        {canEdit && (
+                                                            <IconButton onClick={() => handleSoftDelete(p)} size="small" color="error" title="Mettre à la corbeille">
+                                                                <Trash2 size={18} />
+                                                            </IconButton>
+                                                        )}
+                                                    </>
+                                                )}
+                                            </Box>
                                         </TableCell>
                                     </TableRow>
                                 ))}
@@ -479,15 +551,17 @@ export default function ProvidersPage() {
                     </DialogContent>
 
                     <DialogActions sx={{ p: 2, px: 3 }}>
-                        <Button onClick={() => setEditingProvider(null)}>Annuler</Button>
-                        <Button
-                            variant="contained"
-                            onClick={handleSave}
-                            disabled={saveLoading}
-                            startIcon={saveLoading ? <CircularProgress size={18} /> : null}
-                        >
-                            Enregistrer le Provider
-                        </Button>
+                        <Button onClick={() => setEditingProvider(null)}>{canEdit ? 'Annuler' : 'Fermer'}</Button>
+                        {canEdit && (
+                            <Button
+                                variant="contained"
+                                onClick={handleSave}
+                                disabled={saveLoading}
+                                startIcon={saveLoading ? <CircularProgress size={18} /> : null}
+                            >
+                                Enregistrer le Provider
+                            </Button>
+                        )}
                     </DialogActions>
                 </Dialog>
             </Box>

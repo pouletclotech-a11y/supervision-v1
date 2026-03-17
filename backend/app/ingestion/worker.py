@@ -116,6 +116,23 @@ async def process_ingestion_item(adapter: BaseAdapter, item: AdapterItem, redis_
             monitoring_provider = await repo.get_monitoring_provider(resolved_provider_id)
             provider_code = monitoring_provider.code if monitoring_provider else "UNKNOWN"
 
+            # Sécurité Lifecycle (Archive / Delete)
+            if monitoring_provider and (monitoring_provider.deleted_at is not None or monitoring_provider.is_archived):
+                logger.warning(f"[INGESTION_SKIPPED] Provider {provider_code} is archived or deleted. Ignoring file {item.filename}.")
+                import_log = await repo.create_import_log(
+                    item.filename, 
+                    file_hash=item.sha256, 
+                    provider_id=resolved_provider_id,
+                    import_metadata=item.metadata
+                )
+                await repo.update_import_log(import_log.id, "IGNORED", 0, 0, f"Provider {provider_code} inactive")
+                archive_path = await adapter.ack_unmatched(item, f"Provider {provider_code} inactive")
+                if archive_path:
+                    import_log.archive_path = str(archive_path)
+                    import_log.archive_status = "ARCHIVED"
+                await session.commit()
+                return import_log.id, []
+
             # On crée l'import_log dès maintenant (Phase 2 Architecture)
             if existing_import_id:
                 import_log = await repo.session.get(ImportLog, existing_import_id)

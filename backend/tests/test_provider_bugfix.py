@@ -1,4 +1,5 @@
 import pytest
+from typing import Optional
 from httpx import AsyncClient
 from unittest.mock import patch, MagicMock, AsyncMock
 from app.main import app
