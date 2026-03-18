@@ -49,10 +49,11 @@ interface DailyReceiptStatus {
 }
 
 interface IngestionHealthPanelProps {
-    selectedDate: string;
+    dateFrom: string;
+    dateTo: string;
 }
 
-export default function IngestionHealthPanel({ selectedDate }: IngestionHealthPanelProps) {
+export default function IngestionHealthPanel({ dateFrom, dateTo }: IngestionHealthPanelProps) {
     const [data, setData] = useState<HealthRow[]>([]);
     const [dailyReceipt, setDailyReceipt] = useState<DailyReceiptStatus[]>([]);
     const [loading, setLoading] = useState(true);
@@ -64,11 +65,10 @@ export default function IngestionHealthPanel({ selectedDate }: IngestionHealthPa
         setIsMounted(true);
     }, []);
 
-    const fetchData = async (dateStr?: string) => {
+    const fetchData = async () => {
         setLoading(true);
         try {
-            const d = dateStr || selectedDate;
-            const res = await fetchWithAuth(`/health/ingestion-summary?target_date=${d}`);
+            const res = await fetchWithAuth(`/health/ingestion?date_from=${dateFrom}&date_to=${dateTo}`);
             if (res.ok) {
                 const json = await res.json();
                 setData(json.summary);
@@ -86,17 +86,18 @@ export default function IngestionHealthPanel({ selectedDate }: IngestionHealthPa
     };
 
     useEffect(() => {
-        fetchData(selectedDate);
-        const interval = setInterval(() => fetchData(selectedDate), 60000); // 60s
+        fetchData();
+        const interval = setInterval(() => fetchData(), 60000); // 60s
         return () => clearInterval(interval);
-    }, [selectedDate]);
+    }, [dateFrom, dateTo]);
 
     const getStatusChip = (status: string, providerCode: string) => {
         const handleClick = (e: React.MouseEvent) => {
             e.stopPropagation();
             const params = new URLSearchParams();
             params.set('provider', providerCode);
-            params.set('date', selectedDate);
+            params.set('date_from', dateFrom);
+            params.set('date_to', dateTo);
             if (status === 'CRITICAL' || status === 'WARNING') {
                 params.set('has_error', 'true');
             }
@@ -128,7 +129,7 @@ export default function IngestionHealthPanel({ selectedDate }: IngestionHealthPa
                     </Box>
                 </Box>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <IconButton size="small" onClick={() => fetchData(selectedDate)} disabled={loading}>
+                    <IconButton size="small" onClick={() => fetchData()} disabled={loading}>
                         <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
                     </IconButton>
                 </Box>
@@ -162,7 +163,7 @@ export default function IngestionHealthPanel({ selectedDate }: IngestionHealthPa
                         ) : data.length === 0 ? (
                             <TableRow>
                                 <TableCell colSpan={8} align="center" sx={{ py: 8 }}>
-                                    <Typography variant="body2" color="text.secondary">No data for today yet</Typography>
+                                    <Typography variant="body2" color="text.secondary">No data for this period yet</Typography>
                                 </TableCell>
                             </TableRow>
                         ) : (
@@ -170,7 +171,7 @@ export default function IngestionHealthPanel({ selectedDate }: IngestionHealthPa
                                 <TableRow key={row.provider_id} hover>
                                     <TableCell 
                                         sx={{ cursor: 'pointer' }}
-                                        onClick={() => router.push(`/admin/data-validation?provider=${row.provider_code}&date=${selectedDate}`)}
+                                        onClick={() => router.push(`/admin/data-validation?provider=${row.provider_code}&date_from=${dateFrom}&date_to=${dateTo}`)}
                                     >
                                         <Typography variant="body2" fontWeight={600} color="primary.main">{row.provider_label}</Typography>
                                         <Typography variant="caption" color="text.secondary">{row.provider_code}</Typography>
@@ -195,7 +196,7 @@ export default function IngestionHealthPanel({ selectedDate }: IngestionHealthPa
                                     <TableCell 
                                         align="center"
                                         sx={{ cursor: 'pointer' }}
-                                        onClick={() => router.push(`/admin/data-validation?provider=${row.provider_code}&date=${selectedDate}`)}
+                                        onClick={() => router.push(`/admin/data-validation?provider=${row.provider_code}&date_from=${dateFrom}&date_to=${dateTo}`)}
                                     >
                                         <Typography variant="body2" fontWeight={700} color="primary.main">
                                             {row.total_events.toLocaleString()}
@@ -218,7 +219,7 @@ export default function IngestionHealthPanel({ selectedDate }: IngestionHealthPa
                                                 size="small" 
                                                 color="warning" 
                                                 variant="outlined" 
-                                                onClick={() => router.push(`/admin/data-validation?provider=${row.provider_code}&date=${selectedDate}&has_error=true`)}
+                                                onClick={() => router.push(`/admin/data-validation?provider=${row.provider_code}&date_from=${dateFrom}&date_to=${dateTo}&has_error=true`)}
                                                 sx={{ cursor: 'pointer' }}
                                             />
                                         ) : (

@@ -61,6 +61,11 @@ function DataValidationInner() {
     const [stagedStatus, setStagedStatus] = useState<string>(() => searchParams.get('status') || '');
     const [stagedDateFrom, setStagedDateFrom] = useState<string>(() => searchParams.get('date_from') || '');
     const [stagedDateTo, setStagedDateTo] = useState<string>(() => searchParams.get('date_to') || '');
+    const [isMounted, setIsMounted] = useState(false);
+
+    useEffect(() => {
+        setIsMounted(true);
+    }, []);
 
     // Applied import filters (trigger fetches)
     const [importStatusFilter, setImportStatusFilter] = useState<string>(() => searchParams.get('status') || '');
@@ -325,7 +330,7 @@ function DataValidationInner() {
     // COLUMNS
     const importColumns: GridColDef[] = useMemo(() => [
         { field: 'id', headerName: 'ID', width: 70 },
-        { field: 'created_at', headerName: 'Date', width: 170, valueFormatter: (params: any) => params.value ? new Date(params.value).toLocaleString() : '' },
+        { field: 'created_at', headerName: 'Date', width: 170, valueFormatter: (params: any) => (params.value && isMounted) ? new Date(params.value).toLocaleString() : '...' },
         { field: 'filename', headerName: 'File', minWidth: 200, width: 350 },
         {
             field: 'pdf_support_path', headerName: 'PDF', width: 60,
@@ -389,7 +394,7 @@ function DataValidationInner() {
             field: 'time', headerName: 'Date / Heure', width: 180,
             renderCell: (params: GridRenderCellParams) => (
                 <Typography sx={{ fontSize: 11, fontWeight: 'medium' }}>
-                    {params.value ? new Date(params.value).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '—'}
+                    {(params.value && isMounted) ? new Date(params.value).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '...'}
                 </Typography>
             )
         },
@@ -444,7 +449,7 @@ function DataValidationInner() {
                     <Box sx={{ p: 0.5 }}>
                         {rules.map((r: any) => (
                             <Typography key={r.id} variant="caption" display="block" sx={{ fontSize: 10 }}>
-                                • {r.name} ({new Date(r.matched_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})
+                                • {r.name} ({isMounted ? new Date(r.matched_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '...'})
                             </Typography>
                         ))}
                     </Box>

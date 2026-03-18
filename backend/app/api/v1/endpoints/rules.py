@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from typing import List, Any, Optional, Dict
 from fastapi import APIRouter, Depends, Query, BackgroundTasks, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -60,18 +60,24 @@ class ActiveRuleOut(BaseModel):
         from_attributes = True
 
 
-@router.get("/trigger-summary", response_model=RuleTriggerSummary)
+@router.get("/trigger-summary", response_model=Dict[str, Any])
 async def get_rule_trigger_summary(
-    target_date: date = Query(default_factory=date.today),
+    date_from: date = Query(default_factory=date.today),
+    date_to: Optional[date] = Query(None),
     db: AsyncSession = Depends(get_db)
 ) -> Any:
     """
-    Get a summary of rule triggers for a specific date.
+    Get a summary of rule triggers for a specific date range.
     """
     repo = EventRepository(db)
-    dt = datetime.combine(target_date, datetime.min.time())
+    
+    start_dt = datetime.combine(date_from, datetime.min.time())
+    if date_to:
+        end_dt = datetime.combine(date_to, datetime.min.time()) + timedelta(days=1)
+    else:
+        end_dt = start_dt + timedelta(days=1)
 
-    raw_summary = await repo.get_rule_trigger_summary(dt)
+    raw_summary = await repo.get_rule_trigger_summary(start_dt, end_dt)
 
     from app.core.config_loader import app_config
     rules_cfg = app_config.get('monitoring', {}).get('rules', {})
@@ -92,7 +98,7 @@ async def get_rule_trigger_summary(
     processed_summary.sort(key=lambda x: x["total_triggers"], reverse=True)
 
     return {
-        "date": target_date,
+        "date": date_from,
         "summary": processed_summary
     }
 

@@ -1,13 +1,17 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Layout from '../components/Layout';
-import {
-    Box,
-    Grid,
-    Paper,
-    Typography,
+import { 
+    Box, 
+    Typography, 
+    Grid, 
+    Paper, 
+    TextField, 
+    InputAdornment, 
+    Tooltip, 
     IconButton,
+    CircularProgress,
     Chip,
     LinearProgress
 } from '@mui/material';
@@ -21,17 +25,31 @@ import {
     Clock,
     Calendar
 } from 'lucide-react';
-import { TextField } from '@mui/material';
 import IngestionHealthPanel from '../components/IngestionHealthPanel';
 import RuleTriggerPanel from '../components/RuleTriggerPanel';
 import AlertsListPanel from '../components/AlertsListPanel';
 
 export default function DashboardPage() {
-    const [selectedDate, setSelectedDate] = useState<string>('');
+    const [dateFrom, setDateFrom] = useState('');
+    const [dateTo, setDateTo] = useState('');
+    const [loading, setLoading] = useState(true);
+    const [isMounted, setIsMounted] = useState(false);
 
-    React.useEffect(() => {
-        setSelectedDate(new Date().toISOString().split('T')[0]);
+    useEffect(() => {
+        const today = new Date().toISOString().split('T')[0];
+        setDateFrom(today);
+        setDateTo(today);
+        setIsMounted(true);
+        setLoading(false);
     }, []);
+
+    if (!isMounted) {
+        return (
+            <Box sx={{ p: 4, display: 'flex', justifyContent: 'center' }}>
+                <CircularProgress />
+            </Box>
+        );
+    }
 
     return (
         <Layout>
@@ -47,23 +65,52 @@ export default function DashboardPage() {
                             Good afternoon, Administrator. System is running optimally.
                         </Typography>
                     </Box>
-                    <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-                        <TextField
-                            type="date"
-                            size="small"
-                            value={selectedDate}
-                            onChange={(e) => setSelectedDate(e.target.value)}
-                            sx={{ bgcolor: 'white', borderRadius: 1, width: 160 }}
-                        />
-                        <Chip label="v12.0.1" size="small" variant="outlined" sx={{ borderColor: 'divider' }} />
+                    <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <Typography variant="caption" color="text.secondary">Du</Typography>
+                            <TextField
+                                type="date"
+                                size="small"
+                                value={dateFrom}
+                                onChange={(e) => setDateFrom(e.target.value)}
+                                sx={{ 
+                                    bgcolor: 'white', 
+                                    borderRadius: 1, 
+                                    width: 150,
+                                    '& .MuiOutlinedInput-root': {
+                                        '& fieldset': { borderColor: '#197fe6', borderWidth: '1px' },
+                                        '&:hover fieldset': { borderColor: '#197fe6', borderWidth: '2px' },
+                                    }
+                                }}
+                            />
+                        </Box>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <Typography variant="caption" color="text.secondary">Au</Typography>
+                            <TextField
+                                type="date"
+                                size="small"
+                                value={dateTo}
+                                onChange={(e) => setDateTo(e.target.value)}
+                                sx={{ 
+                                    bgcolor: 'white', 
+                                    borderRadius: 1, 
+                                    width: 150,
+                                    '& .MuiOutlinedInput-root': {
+                                        '& fieldset': { borderColor: '#197fe6', borderWidth: '1px' },
+                                        '&:hover fieldset': { borderColor: '#197fe6', borderWidth: '2px' },
+                                    }
+                                }}
+                            />
+                        </Box>
+                        <Chip label="v12.0.2" size="small" variant="outlined" sx={{ borderColor: 'divider' }} />
                         <Chip icon={<Activity size={14} />} label="Healthy" color="success" size="small" />
                     </Box>
                 </Box>
 
-                {/* STATS CARDS */}
+                {/* STATS CARDS omitted for brevity in replace, keeping the same structure */}
                 <Grid container spacing={3} sx={{ mb: 4 }}>
                     {[
-                        { title: 'Events Today', value: '128,430', change: '+12%', color: '#197fe6', icon: <Activity /> },
+                        { title: 'Events (Période)', value: '128,430', change: '+12%', color: '#197fe6', icon: <Activity /> },
                         { title: 'Processing Rate', value: '450 ev/s', change: '+5%', color: '#10b981', icon: <Server /> },
                         { title: 'Pending Imports', value: '3', change: '-2', color: '#f59e0b', icon: <Database /> },
                         { title: 'Active Alerts', value: '12', change: '+4', color: '#ef4444', icon: <AlertTriangle /> },
@@ -84,7 +131,7 @@ export default function DashboardPage() {
                                         {stat.change.startsWith('+') ? <ArrowUpRight size={14} /> : <ArrowUpRight size={14} style={{ transform: 'rotate(90deg)' }} />}
                                         {stat.change}
                                     </Box>
-                                    from yesterday
+                                    vs. average
                                 </Typography>
                             </Paper>
                         </Grid>
@@ -95,7 +142,7 @@ export default function DashboardPage() {
                 <Grid container spacing={3}>
                     {/* LEFT: INGESTION HEALTH */}
                     <Grid item xs={12} md={8}>
-                        <IngestionHealthPanel selectedDate={selectedDate} />
+                        <IngestionHealthPanel dateFrom={dateFrom} dateTo={dateTo} />
                     </Grid>
 
                     {/* RIGHT: SYSTEM STATUS */}
@@ -145,7 +192,7 @@ export default function DashboardPage() {
 
                     {/* FULL WIDTH: RULE TRIGGER MONITORING */}
                     <Grid item xs={12}>
-                        <RuleTriggerPanel selectedDate={selectedDate} />
+                        <RuleTriggerPanel dateFrom={dateFrom} dateTo={dateTo} />
                     </Grid>
 
                     {/* NEW: INDIVIDUAL ALERTS LIST */}

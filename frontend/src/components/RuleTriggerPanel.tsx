@@ -47,10 +47,11 @@ interface RuleTriggerRow {
 }
 
 interface RuleTriggerPanelProps {
-    selectedDate: string;
+    dateFrom: string;
+    dateTo: string;
 }
 
-export default function RuleTriggerPanel({ selectedDate }: RuleTriggerPanelProps) {
+export default function RuleTriggerPanel({ dateFrom, dateTo }: RuleTriggerPanelProps) {
     const [data, setData] = useState<RuleTriggerRow[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -75,11 +76,10 @@ export default function RuleTriggerPanel({ selectedDate }: RuleTriggerPanelProps
     const [selectedEventId, setSelectedEventId] = useState<number | null>(null);
     const [drawerOpen, setDrawerOpen] = useState(false);
 
-    const fetchData = async (dateStr?: string) => {
+    const fetchData = async () => {
         setLoading(true);
         try {
-            const d = dateStr || selectedDate;
-            const res = await fetchWithAuth(`/rules/trigger-summary?date=${d}`);
+            const res = await fetchWithAuth(`/rules/trigger-summary?date_from=${dateFrom}&date_to=${dateTo}`);
             if (res.ok) {
                 const json = await res.json();
                 setData(json.summary);
@@ -110,10 +110,10 @@ export default function RuleTriggerPanel({ selectedDate }: RuleTriggerPanelProps
     };
 
     useEffect(() => {
-        fetchData(selectedDate);
-        const interval = setInterval(() => fetchData(selectedDate), 60000);
+        fetchData();
+        const interval = setInterval(() => fetchData(), 60000);
         return () => clearInterval(interval);
-    }, [selectedDate]);
+    }, [dateFrom, dateTo]);
 
     const getStatusChip = (status: string) => {
         switch (status) {
@@ -168,7 +168,7 @@ export default function RuleTriggerPanel({ selectedDate }: RuleTriggerPanelProps
                         }}
                         sx={{ mr: 1, '& .MuiInputBase-input': { fontSize: '0.8rem' } }}
                     />
-                    <IconButton size="small" onClick={() => fetchData(selectedDate)} disabled={loading}>
+                    <IconButton size="small" onClick={() => fetchData()} disabled={loading}>
                         <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
                     </IconButton>
                 </Box>
@@ -195,8 +195,8 @@ export default function RuleTriggerPanel({ selectedDate }: RuleTriggerPanelProps
                             <TableRow><TableCell colSpan={6} align="center" sx={{ py: 8 }}>
                                 <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, opacity: 0.6 }}>
                                     <Clock size={28} />
-                                    <Typography variant="body2" color="text.secondary">Aucun déclenchement le {selectedDate}</Typography>
-                                    <Typography variant="caption" color="text.secondary">Essayez une date différente ou vérifiez que les règles sont actives.</Typography>
+                                    <Typography variant="body2" color="text.secondary">Aucun déclenchement du {dateFrom} au {dateTo}</Typography>
+                                    <Typography variant="caption" color="text.secondary">Essayez une période différente ou vérifiez que les règles sont actives.</Typography>
                                 </Box>
                             </TableCell></TableRow>
                         ) : (

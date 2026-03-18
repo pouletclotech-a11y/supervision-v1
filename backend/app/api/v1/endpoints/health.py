@@ -1,4 +1,4 @@
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from typing import List, Any, Optional, Dict
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -43,20 +43,27 @@ class IngestionHealthSummary(BaseModel):
     daily_receipt: List[DailyReceiptStatus]
 
 
-@router.get("/ingestion-summary", response_model=IngestionHealthSummary)
-async def get_ingestion_summary(
-    target_date: date = Query(default_factory=date.today),
+@router.get("/ingestion", response_model=Dict[str, Any])
+async def get_ingestion_health(
+    date_from: date = Query(default_factory=date.today),
+    date_to: Optional[date] = Query(None),
     db: AsyncSession = Depends(get_db)
 ) -> Any:
     """
-    Get a summary of ingestion health for today.
+    Get a summary of ingestion health for a given date range.
     Includes per-provider received vs expected files ratio.
     """
     from app.core.config_loader import app_config
 
     repo = EventRepository(db)
-    dt = datetime.combine(target_date, datetime.min.time())
-    raw_summary = await repo.get_ingestion_health_summary(dt)
+    
+    start_dt = datetime.combine(date_from, datetime.min.time())
+    if date_to:
+        end_dt = datetime.combine(date_to, datetime.min.time()) + timedelta(days=1)
+    else:
+        end_dt = start_dt + timedelta(days=1)
+
+    raw_summary = await repo.get_ingestion_health_summary(start_dt, end_dt)
 
     # Config expected_files_per_day
     ingestion_cfg = app_config.get('monitoring', {}).get('ingestion', {})
@@ -85,12 +92,12 @@ async def get_ingestion_summary(
 
         if expected == 0:
             receipt_status = "OK"   # monitoring désactivé => pas d'alerte
-        elif received == expected:
+        elif received >= expected:
             receipt_status = "OK"    # VERT
         elif received < expected:
             receipt_status = "CRITICAL" # ROUGE
         else:
-            receipt_status = "WARNING"  # ORANGE (over-receiving)
+            receipt_status = "WARNING"  # ORANGE
 
         daily_receipt.append({
             "provider_id": row["provider_id"],
@@ -108,7 +115,7 @@ async def get_ingestion_summary(
     daily_receipt.sort(key=lambda x: status_priority.get(x["status"], 99))
 
     return {
-        "date": dt,
+        "date": start_dt,
         "summary": processed_summary,
         "daily_receipt": daily_receipt,
     }

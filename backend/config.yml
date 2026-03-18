@@ -32,7 +32,11 @@ monitoring:
     normalize_site_code: true
     expected_files_per_day:
       default: 0        # 0 = monitoring désactivé
-      by_provider: {}   # ex: { "YPSILON": 2, "HISTO": 1 }
+      by_provider: 
+        SPGO: 4
+        YPSILON: 2
+        HISTO: 1
+
 
 anti_noise:
   excluded_families: 

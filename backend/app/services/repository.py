@@ -528,14 +528,14 @@ class EventRepository:
         )
         await self.session.execute(stmt)
 
-    async def get_ingestion_health_summary(self, target_date: datetime) -> List[Dict]:
+    async def get_ingestion_health_summary(self, start_date: datetime, end_date: datetime) -> List[Dict]:
         """
-        Aggregates ingestion metrics per provider for a given date.
+        Aggregates ingestion metrics per provider for a given date range.
         """
         from sqlalchemy import cast, Numeric, func as f
         
-        start_date = target_date.replace(hour=0, minute=0, second=0, microsecond=0)
-        end_date = start_date + timedelta(days=1)
+        # Using start_date and end_date from arguments
+        # No recalculation needed
 
         # Subquery for aggregation
         stats_stmt = (
@@ -547,8 +547,9 @@ class EventRepository:
                 func.sum(
                     case(
                         (ImportLog.filename.ilike("%.pdf%"), 1),
-                        (func.jsonb_extract_path_text(ImportLog.import_metadata, 'pdf_support').isnot(None), 1),
-                        (func.jsonb_extract_path_text(ImportLog.import_metadata, 'secondary_filename').ilike("%.pdf%"), 1),
+                        (func.jsonb_exists(ImportLog.import_metadata, 'pdf_support'), 1),
+                        (ImportLog.import_metadata['pdf_support'].isnot(None), 1),
+                        (ImportLog.import_metadata['secondary_filename'].astext.ilike("%.pdf%"), 1),
                         else_=0
                     )
                 ).label("total_pdf"),
@@ -631,14 +632,13 @@ class EventRepository:
 
         return summary
 
-    async def get_rule_trigger_summary(self, target_date: datetime) -> List[Dict]:
+    async def get_rule_trigger_summary(self, start_date: datetime, end_date: datetime) -> List[Dict]:
         """
-        Agrège les déclenchements de règles par règle et par provider pour une date donnée.
+        Agrège les déclenchements de règles par règle et par provider pour une plage de dates donnée.
         """
         from sqlalchemy import distinct
         
-        start_date = target_date.replace(hour=0, minute=0, second=0, microsecond=0)
-        end_date = start_date + timedelta(days=1)
+        # Using start_date and end_date from arguments
 
         # On rejoint event_rule_hits -> events -> imports pour avoir le provider_id
         stmt = (
