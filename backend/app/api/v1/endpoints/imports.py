@@ -12,7 +12,7 @@ from app.services.repository import EventRepository
 
 router = APIRouter()
 
-@router.get("/", response_model=ImportListOut)
+@router.get("", response_model=ImportListOut)
 async def read_imports(
     skip: int = 0,
     limit: int = 20,
@@ -36,6 +36,10 @@ async def read_imports(
         base_stmt = base_stmt.where(ImportLog.created_at >= date_from)
     if date_to:
         base_stmt = base_stmt.where(ImportLog.created_at <= date_to)
+    # Filter out trashed providers
+    base_stmt = base_stmt.join(MonitoringProvider, MonitoringProvider.id == ImportLog.provider_id)
+    base_stmt = base_stmt.where(MonitoringProvider.deleted_at.is_(None))
+    
     if provider_ids is not None:
         base_stmt = base_stmt.where(ImportLog.provider_id.in_(provider_ids))
 
@@ -226,6 +230,16 @@ async def read_import_events(
         stmt_import = select(ImportLog.id).where(ImportLog.id == id, ImportLog.provider_id.in_(provider_ids))
         if not (await db.execute(stmt_import)).scalar_one_or_none():
             raise HTTPException(status_code=403, detail="Not authorized to view events for this import")
+
+    # Always check that the provider is not trashed
+    stmt_provider_check = (
+        select(ImportLog.id)
+        .join(MonitoringProvider, MonitoringProvider.id == ImportLog.provider_id)
+        .where(ImportLog.id == id)
+        .where(MonitoringProvider.deleted_at.is_(None))
+    )
+    if not (await db.execute(stmt_provider_check)).scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Import not found (provider might be deleted)")
     
     if unmatched_only:
         base_stmt = base_stmt.where((Event.normalized_type == 'UNKNOWN') | (Event.normalized_type.is_(None)))

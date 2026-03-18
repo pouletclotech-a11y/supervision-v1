@@ -15,6 +15,13 @@ origins = [str(origin).rstrip("/") for origin in settings.BACKEND_CORS_ORIGINS]
 if "http://localhost:3000" not in origins:
     origins.append("http://localhost:3000")
 
+@app.middleware("http")
+async def diagnostic_middleware(request, call_next):
+    response = await call_next(request)
+    if response.status_code == 403:
+        print(f"DEBUG 403: {request.method} {request.url} auth_header={request.headers.get('authorization', 'MISSING')[:20]}...")
+    return response
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,

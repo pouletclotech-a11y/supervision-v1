@@ -568,10 +568,11 @@ class EventRepository:
                     ImportLog.filename.ilike("%.xls%"),
                     func.jsonb_extract_path_text(ImportLog.import_metadata, 'pdf_support').is_(None)
                 ).label("missing_pdf")
-            )
+            ).join(MonitoringProvider, ImportLog.provider_id == MonitoringProvider.id)
             .where(
                 ImportLog.created_at >= start_date,
-                ImportLog.created_at < end_date
+                ImportLog.created_at < end_date,
+                MonitoringProvider.deleted_at.is_(None)
             )
             .group_by(ImportLog.provider_id)
         ).subquery()
@@ -593,6 +594,7 @@ class EventRepository:
             )
             .join(stats_stmt, MonitoringProvider.id == stats_stmt.c.provider_id, isouter=True)
             .where(MonitoringProvider.is_active == True)
+            .where(MonitoringProvider.deleted_at.is_(None))
         )
 
         result = await self.session.execute(stmt)
@@ -641,11 +643,11 @@ class EventRepository:
                 func.count(func.distinct(Event.site_code)).label("distinct_sites"),
                 func.max(EventRuleHit.created_at).label("last_trigger_at")
             )
-            .join(Event, EventRuleHit.event_id == Event.id)
-            .join(ImportLog, Event.import_id == ImportLog.id)
+            .join(MonitoringProvider, ImportLog.provider_id == MonitoringProvider.id)
             .where(
                 EventRuleHit.created_at >= start_date,
-                EventRuleHit.created_at < end_date
+                EventRuleHit.created_at < end_date,
+                MonitoringProvider.deleted_at.is_(None)
             )
             .group_by(EventRuleHit.rule_id, EventRuleHit.rule_name, ImportLog.provider_id)
         )
@@ -898,7 +900,8 @@ class AdminRepository:
             AND (d.zone_id = h.zone_id OR (d.zone_id IS NULL AND h.zone_id IS NULL))
         JOIN site_connections s ON s.code_site = h.site_code
         JOIN monitoring_providers p ON p.id = s.provider_id
-        WHERE (d.last_disp_time IS NULL OR d.last_disp_time < h.last_hit_time) {provider_filter}
+        WHERE (d.last_disp_time IS NULL OR d.last_disp_time < h.last_hit_time) 
+          AND p.deleted_at IS NULL {provider_filter}
         ORDER BY h.last_hit_time DESC
         OFFSET :skip LIMIT :limit
         """
@@ -956,8 +959,7 @@ class AdminRepository:
             AND (d.zone_id = h.zone_id OR (d.zone_id IS NULL AND h.zone_id IS NULL))
         JOIN site_connections s ON s.code_site = h.site_code
         JOIN monitoring_providers p ON p.id = s.provider_id
-        WHERE d.last_disp_time >= h.last_hit_time
-          AND d.last_disp_time >= NOW() - INTERVAL '1 day' * :days
+          AND p.deleted_at IS NULL
           {provider_filter}
         ORDER BY d.last_disp_time DESC
         OFFSET :skip LIMIT :limit

@@ -15,25 +15,25 @@ router = APIRouter()
 
 # --- Providers CRUD ---
 
-@router.get("/", response_model=List[MonitoringProviderSchema])
+@router.get("", response_model=List[MonitoringProviderSchema])
 async def get_providers(
     db: AsyncSession = Depends(deps.get_db),
     current_user: User = Depends(deps.get_current_active_admin),
     provider_ids: Optional[list[int]] = Depends(deps.get_user_provider_ids)
 ) -> Any:
-    """Get all providers with full configuration."""
-    stmt = select(MonitoringProvider).where(MonitoringProvider.deleted_at.is_(None))
+    """Get all providers with full configuration including deleted ones."""
+    stmt = select(MonitoringProvider)
     if provider_ids is not None:
         stmt = stmt.where(MonitoringProvider.id.in_(provider_ids))
     stmt = stmt.order_by(MonitoringProvider.label.asc())
     result = await db.execute(stmt)
     return result.scalars().all()
 
-@router.post("/", response_model=MonitoringProviderSchema)
+@router.post("", response_model=MonitoringProviderSchema)
 async def create_provider(
     provider_in: MonitoringProviderCreate,
     db: AsyncSession = Depends(deps.get_db),
-    current_user: User = Depends(deps.get_current_super_admin),
+    current_user: User = Depends(deps.get_current_active_admin),
 ) -> Any:
     """Create a new provider."""
     # Check if code already exists
@@ -139,7 +139,7 @@ async def unarchive_provider(
 async def restore_provider(
     provider_id: int,
     db: AsyncSession = Depends(deps.get_db),
-    current_user: User = Depends(deps.get_current_super_admin),
+    current_user: User = Depends(deps.get_current_active_admin),
 ) -> Any:
     stmt = select(MonitoringProvider).where(MonitoringProvider.id == provider_id)
     result = await db.execute(stmt)
@@ -158,7 +158,7 @@ async def restore_provider(
 async def delete_provider(
     provider_id: int,
     db: AsyncSession = Depends(deps.get_db),
-    current_user: User = Depends(deps.get_current_super_admin),
+    current_user: User = Depends(deps.get_current_active_admin),
 ) -> Any:
     """Soft delete a provider (trash 30 days)."""
     stmt = select(MonitoringProvider).where(MonitoringProvider.id == provider_id)
@@ -176,6 +176,26 @@ async def delete_provider(
     db.add(audit)
     await db.commit()
     return {"status": "success", "message": "Provider moved to trash (30 days)"}
+
+@router.delete("/{provider_id}/purge")
+async def purge_provider(
+    provider_id: int,
+    db: AsyncSession = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_super_admin),
+) -> Any:
+    """Permanent delete of a provider (SUPER_ADMIN only)."""
+    stmt = select(MonitoringProvider).where(MonitoringProvider.id == provider_id)
+    result = await db.execute(stmt)
+    provider = result.scalar_one_or_none()
+    if not provider:
+        raise HTTPException(status_code=404, detail="Provider not found")
+        
+    audit = AuditLog(user_id=current_user.id, action="PURGE_PROVIDER", target_type="PROVIDER", target_id=str(provider_id), payload={"code": provider.code})
+    db.add(audit)
+    
+    await db.delete(provider)
+    await db.commit()
+    return {"status": "success", "message": "Provider permanently deleted"}
 
 # --- SMTP Rules (Whitelist & Frequency) ---
 

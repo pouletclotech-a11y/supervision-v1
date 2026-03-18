@@ -2,7 +2,7 @@ from typing import Any, List
 from fastapi import APIRouter, Depends, HTTPException, Body, File, UploadFile
 import os
 import shutil
-from datetime import datetime
+from datetime import datetime, timezone
 from app.core.config import settings
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -209,6 +209,7 @@ async def delete_user(
         )
 
     user.is_active = False
+    user.deleted_at = datetime.now(timezone.utc)
     db.add(user)
     
     audit = AuditLog(user_id=current_user.id, action="DELETE_USER", target_type="USER", target_id=str(user.id))
@@ -217,6 +218,54 @@ async def delete_user(
     await db.commit()
     await db.refresh(user)
     return user
+
+@router.post("/{user_id}/restore", response_model=UserOut)
+async def restore_user(
+    *,
+    db: AsyncSession = Depends(deps.get_db),
+    user_id: int,
+    current_user: User = Depends(deps.get_current_active_admin),
+) -> Any:
+    """Restore a deleted user."""
+    stmt = select(User).where(User.id == user_id)
+    result = await db.execute(stmt)
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    user.is_active = True
+    user.deleted_at = None
+    db.add(user)
+    
+    audit = AuditLog(user_id=current_user.id, action="RESTORE_USER", target_type="USER", target_id=str(user.id))
+    db.add(audit)
+    await db.commit()
+    await db.refresh(user)
+    return user
+
+@router.delete("/{user_id}/purge")
+async def purge_user(
+    *,
+    db: AsyncSession = Depends(deps.get_db),
+    user_id: int,
+    current_user: User = Depends(deps.get_current_super_admin),
+) -> Any:
+    """Permanently delete a user (SUPER_ADMIN only)."""
+    stmt = select(User).where(User.id == user_id)
+    result = await db.execute(stmt)
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+        
+    if user.id == current_user.id:
+        raise HTTPException(status_code=400, detail="You cannot purge your own account")
+
+    audit = AuditLog(user_id=current_user.id, action="PURGE_USER", target_type="USER", target_id=str(user.id), payload={"email": user.email})
+    db.add(audit)
+    
+    await db.delete(user)
+    await db.commit()
+    return {"status": "success", "message": "User permanently deleted"}
 
 # -----------------------------------------------------------------------------
 # PHOTO UPLOAD

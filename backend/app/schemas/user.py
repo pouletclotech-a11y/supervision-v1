@@ -25,6 +25,7 @@ class UserOut(UserBase):
     id: int
     created_at: datetime
     last_login_at: Optional[datetime] = None
+    deleted_at: Optional[datetime] = None
     provider_ids: Optional[list[int]] = None
 
     model_config = ConfigDict(from_attributes=True)

@@ -16,10 +16,12 @@ import {
     Chip,
     Alert,
     CircularProgress,
-    Avatar
+    Avatar,
+    Tabs,
+    Tab
 } from '@mui/material';
 import { DataGrid, GridColDef } from '@mui/x-data-grid';
-import { Users, UserPlus, Edit2, Trash2, Shield, Camera } from 'lucide-react';
+import { Users, UserPlus, Edit2, Trash2, Shield, Camera, RotateCcw, X, Archive } from 'lucide-react';
 import Layout from '../../../components/Layout';
 import { fetchWithAuth, API_ORIGIN } from '../../../lib/api';
 import { useAuth } from '@/context/AuthContext';
@@ -30,6 +32,7 @@ interface User {
     full_name: string | null;
     role: string;
     is_active: boolean;
+    deleted_at: string | null;
     profile_photo: string | null;
     created_at: string;
 }
@@ -40,6 +43,7 @@ export default function UsersPage() {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+    const [filterState, setFilterState] = useState<'ACTIVE' | 'TRASH'>('ACTIVE');
 
     // Dialog State
     const [openDialog, setOpenDialog] = useState(false);
@@ -65,7 +69,12 @@ export default function UsersPage() {
             } else {
                 setError("Failed to load users. RBAC Restricted?");
             }
-        } catch (err) {
+        } catch (err: any) {
+            if (err.status === 401) {
+                // Let the global interceptor or context handle redirect, 
+                // but we clear the local error to avoid flash
+                return;
+            }
             setError("Network error.");
         } finally {
             setLoading(false);
@@ -125,14 +134,52 @@ export default function UsersPage() {
 
     const handleToggleStatus = async (user: User) => {
         try {
-            const res = await fetchWithAuth(`/users/${user.id}`, {
-                method: 'PATCH',
-                body: JSON.stringify({ is_active: !user.is_active })
+            const action = filterState === 'TRASH' ? 'restore' : '';
+            const url = action ? `/users/${user.id}/${action}` : `/users/${user.id}`;
+
+            if (filterState === 'ACTIVE') {
+                if (user.id === currentUser?.id) {
+                    alert("Vous ne pouvez pas vous mettre à la corbeille vous-même.");
+                    return;
+                }
+                if (!confirm(`Mettre l'utilisateur ${user.email} à la corbeille ?`)) return;
+            }
+
+            const res = await fetchWithAuth(url, {
+                method: action ? 'POST' : 'DELETE'
             });
-            if (res.ok) fetchUsers();
+            if (res.ok) {
+                fetchUsers();
+                if (user.id === currentUser?.id) {
+                    // This case shouldn't happen with the check above, but for safety
+                    window.location.href = '/login';
+                }
+            }
+            else {
+                const err = await res.json().catch(() => ({}));
+                alert(`Échec de l'action: ${err.detail || 'Erreur inconnue'}`);
+            }
         } catch (err) {
             console.error(err);
         }
+    };
+
+    const handlePurge = async (user: User) => {
+        if (user.id === currentUser?.id) {
+            alert("Vous ne pouvez pas supprimer définitivement votre propre compte.");
+            return;
+        }
+        if (!confirm(`ATTENTION: La suppression de ${user.email} est IRREVERSIBLE. Continuer ?`)) return;
+        try {
+            const res = await fetchWithAuth(`/users/${user.id}/purge`, {
+                method: 'DELETE'
+            });
+            if (res.ok) fetchUsers();
+            else {
+                const err = await res.json();
+                alert(`Erreur: ${err.detail || "Échec de la suppression définitive"}`);
+            }
+        } catch (err) { alert("Action échouée"); }
     };
 
     const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -218,18 +265,50 @@ export default function UsersPage() {
             field: 'actions', headerName: 'Actions', width: 150, align: 'right',
             renderCell: (params) => (
                 <Box>
-                    <IconButton size="small" onClick={() => handleOpenEdit(params.row)}><Edit2 size={16} /></IconButton>
-                    <IconButton
-                        size="small"
-                        color={params.row.is_active ? 'warning' : 'success'}
-                        onClick={() => handleToggleStatus(params.row)}
-                    >
-                        <Trash2 size={16} />
-                    </IconButton>
+                    {filterState === 'ACTIVE' ? (
+                        <>
+                            <IconButton size="small" onClick={() => handleOpenEdit(params.row)} title="Modifier"><Edit2 size={16} /></IconButton>
+                            <IconButton
+                                size="small"
+                                color="error"
+                                onClick={() => handleToggleStatus(params.row)}
+                                title="Mettre à la corbeille"
+                            >
+                                <Trash2 size={16} />
+                            </IconButton>
+                        </>
+                    ) : (
+                        <>
+                            <IconButton
+                                size="small"
+                                color="success"
+                                onClick={() => handleToggleStatus(params.row)}
+                                title="Restaurer"
+                            >
+                                <RotateCcw size={16} />
+                            </IconButton>
+                            {currentUser?.role === 'SUPER_ADMIN' && (
+                                <IconButton
+                                    size="small"
+                                    color="error"
+                                    onClick={() => handlePurge(params.row)}
+                                    title="Supprimer définitivement"
+                                >
+                                    <X size={16} />
+                                </IconButton>
+                            )}
+                        </>
+                    )}
                 </Box>
             )
         }
     ];
+
+    const displayUsers = users.filter(u => {
+        if (filterState === 'ACTIVE') return !u.deleted_at;
+        if (filterState === 'TRASH') return !!u.deleted_at;
+        return true;
+    });
 
     return (
         <Layout>
@@ -243,9 +322,19 @@ export default function UsersPage() {
                             Admin only: Control access and permissions.
                         </Typography>
                     </Box>
-                    <Button variant="contained" startIcon={<UserPlus size={18} />} onClick={handleOpenCreate}>
-                        Add User
-                    </Button>
+                    <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+                        <Tabs 
+                            value={filterState} 
+                            onChange={(_, val) => setFilterState(val)}
+                            sx={{ minHeight: 40 }}
+                        >
+                            <Tab label="Actifs" value="ACTIVE" />
+                            <Tab label="Corbeille" value="TRASH" />
+                        </Tabs>
+                        <Button variant="contained" startIcon={<UserPlus size={18} />} onClick={handleOpenCreate}>
+                            Add User
+                        </Button>
+                    </Box>
                 </Box>
 
                 {error && <Alert severity="error" sx={{ mb: 3 }}>{error}</Alert>}
@@ -257,7 +346,7 @@ export default function UsersPage() {
 
                 <Paper sx={{ height: 600, width: '100%', bgcolor: 'background.paper' }}>
                     <DataGrid
-                        rows={users}
+                        rows={displayUsers}
                         columns={columns}
                         loading={loading}
                         disableRowSelectionOnClick

@@ -18,7 +18,7 @@ async def create_admin(email, password):
         if existing:
             print("User already exists. Updating password and roles...")
             existing.hashed_password = get_password_hash(password)
-            existing.role = 'ADMIN'
+            existing.role = 'SUPER_ADMIN'
             existing.is_active = True
             existing.is_superuser = True # Ensure superuser if model supports it
             updated = True
@@ -28,7 +28,7 @@ async def create_admin(email, password):
                 email=email,
                 hashed_password=get_password_hash(password),
                 full_name="System Administrator",
-                role="ADMIN",
+                role="SUPER_ADMIN",
                 is_active=True
             )
             # Some versions use is_superuser

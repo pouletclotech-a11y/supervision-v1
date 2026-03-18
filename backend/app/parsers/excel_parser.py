@@ -116,8 +116,10 @@ class ExcelParser(BaseParser):
 
                 row_idx = idx + 1
                 
-                # Ignore Row 1 (Header/MetaData)
-                if row_idx == 1:
+                # Ignore header rows based on config (default 1)
+                # If mapping is present and ignore_header_rows is explicitly 0, we don't skip
+                ignore_headers = parser_config.get("ignore_header_rows", 1) if parser_config else 1
+                if row_idx <= ignore_headers:
                     continue
                 if mapping:
                     # Helper to get by index or letter
@@ -307,7 +309,8 @@ class ExcelParser(BaseParser):
                                 events.append(evt)
                                 metrics["events_created"] += 1
                                 last_ts = evt.timestamp
-                    except: 
+                    except Exception as e:
+                        # logger.error(f" [LEGACY_PARSE_ERROR] row={row_idx} err={e}")
                         record_skip("LEGACY_PARSE_ERROR", row_idx, row)
             
             logger.info(f" [XLSX_EVENTS_DONE] count={len(events)} metrics={metrics}")
@@ -444,7 +447,10 @@ class ExcelParser(BaseParser):
         col_site = str(clean_excel_value(clean_row[0])).strip()
         col_client = str(clean_excel_value(clean_row[1])).strip()
         
+        # logger.info(f" [_process_row_histo] row={row_idx} site={col_site} provider={provider_code}")
+        
         # Strategy based mapping logic
+        time_strategy = parser_config.get("time_strategy") if parser_config else None
         if time_strategy == "CORS_HISTO" or provider_code == "CORS":
             # A=0, G=6, H=7, I=8, J=9, N=13
             col_ts = clean_row[6]

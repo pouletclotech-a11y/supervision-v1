@@ -21,6 +21,7 @@ async def get_current_user(
     token: str = Depends(oauth2_scheme),
     db: AsyncSession = Depends(get_db)
 ) -> User:
+    print(f"DEBUG AUTH: decoding token...")
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
@@ -30,8 +31,10 @@ async def get_current_user(
         payload = jwt.decode(token, security.SECRET_KEY, algorithms=[security.ALGORITHM])
         user_id: str = payload.get("sub")
         if user_id is None:
+            print("DEBUG AUTH: no sub in payload")
             raise credentials_exception
-    except (JWTError, ValidationError):
+    except (JWTError, ValidationError) as e:
+        print(f"DEBUG AUTH: decode failed: {e}")
         raise credentials_exception
         
     stmt = select(User).where(User.id == int(user_id))
@@ -39,16 +42,25 @@ async def get_current_user(
     user = result.scalar_one_or_none()
     
     if user is None:
+        print(f"DEBUG AUTH: user {user_id} not found in DB")
         raise credentials_exception
     if not user.is_active:
-        raise HTTPException(status_code=400, detail="Inactive user")
+        print(f"DEBUG AUTH: user {user_id} is INACTIVE")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Inactive user",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
         
+    print(f"DEBUG AUTH: user {user.email} authenticated")
     return user
 
 def get_current_active_admin(
     current_user: User = Depends(get_current_user),
 ) -> User:
+    print(f"DEBUG ROLE: user={current_user.email} role={current_user.role} checking for ADMIN/SUPER_ADMIN")
     if current_user.role not in ["ADMIN", "SUPER_ADMIN"]:
+        print(f"DEBUG ROLE: REJECTED (not in ADMIN/SUPER_ADMIN)")
         raise HTTPException(
             status_code=403, detail="The user doesn't have enough privileges"
         )
@@ -66,7 +78,9 @@ def get_current_operator_or_admin(
 def get_current_super_admin(
     current_user: User = Depends(get_current_user),
 ) -> User:
+    print(f"DEBUG ROLE: user={current_user.email} role={current_user.role} checking for SUPER_ADMIN")
     if current_user.role != "SUPER_ADMIN":
+        print(f"DEBUG ROLE: REJECTED (not SUPER_ADMIN)")
         raise HTTPException(
             status_code=403, detail="The user doesn't have enough privileges. Super Admin required."
         )
@@ -76,11 +90,14 @@ async def get_user_provider_ids(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ) -> Optional[list[int]]:
-    """Retourne la liste des IDs de providers autorisés, ou None si SUPER_ADMIN (accès à tout)."""
-    if current_user.role == "SUPER_ADMIN":
+    """Retourne la liste des IDs de providers autorisés, ou None si ADMIN/SUPER_ADMIN (accès à tout)."""
+    print(f"DEBUG PERM: getting provider IDs for {current_user.email}")
+    if current_user.role in ["SUPER_ADMIN", "ADMIN"]:
         return None
     
     stmt = select(UserProvider.provider_id).where(UserProvider.user_id == current_user.id)
     result = await db.execute(stmt)
-    return list(result.scalars().all())
+    ids = list(result.scalars().all())
+    print(f"DEBUG PERM: ids={ids}")
+    return ids
 

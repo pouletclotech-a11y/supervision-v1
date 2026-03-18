@@ -236,6 +236,20 @@ export default function ProvidersPage() {
         } catch (err) { alert("Action échouée"); }
     };
 
+    const handlePurge = async (provider: Provider) => {
+        if (!confirm(`ATTENTION: La suppression de '${provider.label}' est IRREVERSIBLE. Toutes ses configurations seront perdues. Continuer ?`)) return;
+        try {
+            const res = await fetchWithAuth(`/admin/providers/${provider.id}/purge`, {
+                method: 'DELETE'
+            });
+            if (res.ok) await loadProviders();
+            else {
+                const err = await res.json();
+                alert(`Erreur: ${err.detail || "Échec de la suppression définitive"}`);
+            }
+        } catch (err) { alert("Action échouée"); }
+    };
+
     const displayProviders = providers.filter(p => {
         if (filterState === 'ACTIVE') return p.is_active && !p.is_archived && !p.deleted_at;
         if (filterState === 'ARCHIVED') return p.is_archived && !p.deleted_at;
@@ -347,9 +361,16 @@ export default function ProvidersPage() {
                                                     </IconButton>
                                                 )}
                                                 {canEdit && filterState === 'TRASH' ? (
-                                                    <IconButton onClick={() => handleRestore(p)} size="small" color="success" title="Restaurer">
-                                                        <RotateCcw size={18} />
-                                                    </IconButton>
+                                                    <>
+                                                        <IconButton onClick={() => handleRestore(p)} size="small" color="success" title="Restaurer">
+                                                            <RotateCcw size={18} />
+                                                        </IconButton>
+                                                        {user?.role === 'SUPER_ADMIN' && (
+                                                            <IconButton onClick={() => handlePurge(p)} size="small" color="error" title="Supprimer définitivement">
+                                                                <X size={18} />
+                                                            </IconButton>
+                                                        )}
+                                                    </>
                                                 ) : (
                                                     <>
                                                         <IconButton onClick={() => handleEdit(p)} size="small" color="primary" title={canEdit ? "Modifier" : "Voir"}>

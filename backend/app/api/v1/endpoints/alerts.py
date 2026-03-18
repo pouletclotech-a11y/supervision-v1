@@ -52,6 +52,7 @@ async def list_alerts(
         .join(Event, EventRuleHit.event_id == Event.id)
         .outerjoin(ImportLog, Event.import_id == ImportLog.id)
         .outerjoin(MonitoringProvider, ImportLog.provider_id == MonitoringProvider.id)
+        .where(MonitoringProvider.deleted_at.is_(None))
     )
 
     # Filters

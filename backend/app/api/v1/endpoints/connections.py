@@ -146,6 +146,7 @@ async def get_connection_stats(
         )
         .outerjoin(SiteConnection, SiteConnection.provider_id == MonitoringProvider.id)
         .where(MonitoringProvider.is_active == True)
+        .where(MonitoringProvider.deleted_at.is_(None))
         .group_by(MonitoringProvider.id, MonitoringProvider.code, MonitoringProvider.label, MonitoringProvider.ui_color)
         .order_by(MonitoringProvider.code)
     )
@@ -186,6 +187,9 @@ async def list_connections(
 
     if provider_code:
         base_stmt = base_stmt.where(MonitoringProvider.code == provider_code)
+    
+    # Always filter out trashed providers
+    base_stmt = base_stmt.where(MonitoringProvider.deleted_at.is_(None))
 
     if search:
         search_pattern = f"%{search}%"
@@ -346,7 +350,7 @@ async def delete_provider(
 ) -> Any:
     """Delete a monitoring provider. ADMIN only."""
     # Strict RBAC: only check ADMIN role here
-    if current_user.role != "ADMIN":
+    if current_user.role not in ["ADMIN", "SUPER_ADMIN"]:
         raise HTTPException(status_code=403, detail="Only admins can delete providers")
         
     stmt = select(MonitoringProvider).where(MonitoringProvider.id == provider_id)
@@ -458,7 +462,7 @@ async def delete_provider_rule(
 ) -> Any:
     """Delete an SMTP rule. ADMIN only."""
     # Strict RBAC: only check ADMIN role here
-    if current_user.role != "ADMIN":
+    if current_user.role not in ["ADMIN", "SUPER_ADMIN"]:
         raise HTTPException(status_code=403, detail="Only admins can delete rules")
         
     stmt = select(SmtpProviderRule).where(
