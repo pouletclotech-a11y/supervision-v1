@@ -57,7 +57,7 @@ export default function IngestionHealthPanel({ selectedDate }: IngestionHealthPa
     const [dailyReceipt, setDailyReceipt] = useState<DailyReceiptStatus[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-    const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
+    const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
     const router = useRouter();
     const [isMounted, setIsMounted] = useState(false);
     useEffect(() => {

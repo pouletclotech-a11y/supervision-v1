@@ -54,7 +54,7 @@ export default function RuleTriggerPanel({ selectedDate }: RuleTriggerPanelProps
     const [data, setData] = useState<RuleTriggerRow[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-    const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
+    const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
     const [providerFilter, setProviderFilter] = useState('');
     const router = useRouter();
 

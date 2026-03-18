@@ -27,7 +27,11 @@ import RuleTriggerPanel from '../components/RuleTriggerPanel';
 import AlertsListPanel from '../components/AlertsListPanel';
 
 export default function DashboardPage() {
-    const [selectedDate, setSelectedDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
+    const [selectedDate, setSelectedDate] = useState<string>('');
+
+    React.useEffect(() => {
+        setSelectedDate(new Date().toISOString().split('T')[0]);
+    }, []);
 
     return (
         <Layout>

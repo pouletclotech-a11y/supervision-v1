@@ -55,6 +55,11 @@ export default function ImportsPage() {
     const [rowsPerPage, setRowsPerPage] = useState(15);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
+    const [isMounted, setIsMounted] = useState(false);
+
+    useEffect(() => {
+        setIsMounted(true);
+    }, []);
 
     // Inspection Drawer State
     const [selectedImport, setSelectedImport] = useState<any>(null);
@@ -195,7 +200,7 @@ export default function ImportsPage() {
                                 </TableRow>
                             ) : imports.map((imp: any) => (
                                 <TableRow key={imp.id} hover>
-                                    <TableCell>{new Date(imp.created_at).toLocaleString()}</TableCell>
+                                    <TableCell>{isMounted ? new Date(imp.created_at).toLocaleString() : '...'}</TableCell>
                                     <TableCell sx={{ fontWeight: 500 }}>{imp.filename}</TableCell>
                                     <TableCell>
                                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
