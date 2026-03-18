@@ -1,6 +1,6 @@
-from datetime import datetime
+from datetime import datetime, date
 from typing import List, Any, Optional, Dict
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.session import get_db
 from app.db.redis import get_redis_client
@@ -45,6 +45,7 @@ class IngestionHealthSummary(BaseModel):
 
 @router.get("/ingestion-summary", response_model=IngestionHealthSummary)
 async def get_ingestion_summary(
+    target_date: date = Query(default_factory=date.today),
     db: AsyncSession = Depends(get_db)
 ) -> Any:
     """
@@ -54,8 +55,8 @@ async def get_ingestion_summary(
     from app.core.config_loader import app_config
 
     repo = EventRepository(db)
-    today = datetime.now()
-    raw_summary = await repo.get_ingestion_health_summary(today)
+    dt = datetime.combine(target_date, datetime.min.time())
+    raw_summary = await repo.get_ingestion_health_summary(dt)
 
     # Config expected_files_per_day
     ingestion_cfg = app_config.get('monitoring', {}).get('ingestion', {})
@@ -107,7 +108,7 @@ async def get_ingestion_summary(
     daily_receipt.sort(key=lambda x: status_priority.get(x["status"], 99))
 
     return {
-        "date": today,
+        "date": dt,
         "summary": processed_summary,
         "daily_receipt": daily_receipt,
     }

@@ -46,14 +46,16 @@ interface RuleTriggerRow {
     health_status: 'HIGH_ACTIVITY' | 'LOW_ACTIVITY' | 'NORMAL';
 }
 
-export default function RuleTriggerPanel() {
+interface RuleTriggerPanelProps {
+    selectedDate: string;
+}
+
+export default function RuleTriggerPanel({ selectedDate }: RuleTriggerPanelProps) {
     const [data, setData] = useState<RuleTriggerRow[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
     const [providerFilter, setProviderFilter] = useState('');
-    // Default to today; user can change to see historical data
-    const [selectedDate, setSelectedDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
     const router = useRouter();
 
     // Drilldown state
@@ -151,13 +153,6 @@ export default function RuleTriggerPanel() {
                     </Box>
                 </Box>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <TextField
-                        type="date"
-                        size="small"
-                        value={selectedDate}
-                        onChange={(e) => setSelectedDate(e.target.value)}
-                        sx={{ width: 140, '& .MuiInputBase-input': { fontSize: '0.75rem', py: 0.5 } }}
-                    />
                     <TextField
                         size="small"
                         placeholder="Search..."

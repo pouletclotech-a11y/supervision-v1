@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import Layout from '../components/Layout';
 import {
     Box,
@@ -18,13 +18,17 @@ import {
     AlertTriangle,
     MoreHorizontal,
     ArrowUpRight,
-    Clock
+    Clock,
+    Calendar
 } from 'lucide-react';
+import { TextField } from '@mui/material';
 import IngestionHealthPanel from '../components/IngestionHealthPanel';
 import RuleTriggerPanel from '../components/RuleTriggerPanel';
 import AlertsListPanel from '../components/AlertsListPanel';
 
 export default function DashboardPage() {
+    const [selectedDate, setSelectedDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
+
     return (
         <Layout>
             <Box sx={{ p: 3, maxWidth: 1600, mx: 'auto' }}>
@@ -39,7 +43,14 @@ export default function DashboardPage() {
                             Good afternoon, Administrator. System is running optimally.
                         </Typography>
                     </Box>
-                    <Box sx={{ display: 'flex', gap: 1 }}>
+                    <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+                        <TextField
+                            type="date"
+                            size="small"
+                            value={selectedDate}
+                            onChange={(e) => setSelectedDate(e.target.value)}
+                            sx={{ bgcolor: 'white', borderRadius: 1, width: 160 }}
+                        />
                         <Chip label="v12.0.1" size="small" variant="outlined" sx={{ borderColor: 'divider' }} />
                         <Chip icon={<Activity size={14} />} label="Healthy" color="success" size="small" />
                     </Box>
@@ -80,7 +91,7 @@ export default function DashboardPage() {
                 <Grid container spacing={3}>
                     {/* LEFT: INGESTION HEALTH */}
                     <Grid item xs={12} md={8}>
-                        <IngestionHealthPanel />
+                        <IngestionHealthPanel selectedDate={selectedDate} />
                     </Grid>
 
                     {/* RIGHT: SYSTEM STATUS */}
@@ -130,7 +141,7 @@ export default function DashboardPage() {
 
                     {/* FULL WIDTH: RULE TRIGGER MONITORING */}
                     <Grid item xs={12}>
-                        <RuleTriggerPanel />
+                        <RuleTriggerPanel selectedDate={selectedDate} />
                     </Grid>
 
                     {/* NEW: INDIVIDUAL ALERTS LIST */}

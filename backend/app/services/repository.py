@@ -3,7 +3,7 @@ import pytz
 from typing import List, Dict, Optional
 from datetime import datetime, timedelta, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update, func
+from sqlalchemy import select, update, func, case, cast, Numeric
 from sqlalchemy.dialects.postgresql import insert
 from app.db.models import (
     Event, Site, ImportLog, AlertRule, EventRuleHit, SiteConnection, 
@@ -544,7 +544,14 @@ class EventRepository:
                 func.count(ImportLog.id).label("total_imports"),
                 func.count(func.distinct(ImportLog.source_message_id)).label("total_emails"),
                 func.count().filter(ImportLog.filename.ilike("%.xls%")).label("total_xls"),
-                func.count().filter(ImportLog.filename.ilike("%.pdf%")).label("total_pdf"),
+                func.sum(
+                    case(
+                        (ImportLog.filename.ilike("%.pdf%"), 1),
+                        (func.jsonb_extract_path_text(ImportLog.import_metadata, 'pdf_support').isnot(None), 1),
+                        (func.jsonb_extract_path_text(ImportLog.import_metadata, 'secondary_filename').ilike("%.pdf%"), 1),
+                        else_=0
+                    )
+                ).label("total_pdf"),
                 func.sum(ImportLog.events_count).label("total_events"),
                 func.sum(
                     cast(
@@ -614,7 +621,7 @@ class EventRepository:
                 "total_imports": row.total_imports,
                 "total_emails": row.total_emails,
                 "total_xls": row.total_xls,
-                "total_pdf": row.total_pdf,
+                "total_pdf": int(row.total_pdf or 0),
                 "total_events": int(row.total_events or 0),
                 "integrity_numerator": int(numerator),
                 "integrity_denominator": int(denominator),
@@ -643,6 +650,8 @@ class EventRepository:
                 func.count(func.distinct(Event.site_code)).label("distinct_sites"),
                 func.max(EventRuleHit.created_at).label("last_trigger_at")
             )
+            .join(Event, Event.id == EventRuleHit.event_id)
+            .join(ImportLog, ImportLog.id == Event.import_id)
             .join(MonitoringProvider, ImportLog.provider_id == MonitoringProvider.id)
             .where(
                 EventRuleHit.created_at >= start_date,

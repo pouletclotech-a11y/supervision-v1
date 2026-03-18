@@ -19,6 +19,8 @@ import {
 } from '@mui/material';
 import { RefreshCw, Mail, FileText, Database, Activity, AlertCircle, CheckCircle, Info } from 'lucide-react';
 import { fetchWithAuth } from '../lib/api';
+import { useRouter } from 'next/navigation';
+import { TextField } from '@mui/material';
 
 interface HealthRow {
     provider_id: number;
@@ -46,17 +48,23 @@ interface DailyReceiptStatus {
     status: 'OK' | 'WARNING' | 'CRITICAL';
 }
 
-export default function IngestionHealthPanel() {
+interface IngestionHealthPanelProps {
+    selectedDate: string;
+}
+
+export default function IngestionHealthPanel({ selectedDate }: IngestionHealthPanelProps) {
     const [data, setData] = useState<HealthRow[]>([]);
     const [dailyReceipt, setDailyReceipt] = useState<DailyReceiptStatus[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
+    const router = useRouter();
 
-    const fetchData = async () => {
+    const fetchData = async (dateStr?: string) => {
         setLoading(true);
         try {
-            const res = await fetchWithAuth('/health/ingestion-summary');
+            const d = dateStr || selectedDate;
+            const res = await fetchWithAuth(`/health/ingestion-summary?target_date=${d}`);
             if (res.ok) {
                 const json = await res.json();
                 setData(json.summary);
@@ -74,21 +82,32 @@ export default function IngestionHealthPanel() {
     };
 
     useEffect(() => {
-        fetchData();
-        const interval = setInterval(fetchData, 60000); // 60s
+        fetchData(selectedDate);
+        const interval = setInterval(() => fetchData(selectedDate), 60000); // 60s
         return () => clearInterval(interval);
-    }, []);
+    }, [selectedDate]);
 
-    const getStatusChip = (status: string) => {
+    const getStatusChip = (status: string, providerCode: string) => {
+        const handleClick = (e: React.MouseEvent) => {
+            e.stopPropagation();
+            const params = new URLSearchParams();
+            params.set('provider', providerCode);
+            params.set('date', selectedDate);
+            if (status === 'CRITICAL' || status === 'WARNING') {
+                params.set('has_error', 'true');
+            }
+            router.push(`/admin/data-validation?${params.toString()}`);
+        };
+
         switch (status) {
             case 'OK':
-                return <Chip icon={<CheckCircle size={14} />} label="OK" color="success" size="small" variant="filled" />;
+                return <Chip icon={<CheckCircle size={14} />} label="OK" color="success" size="small" variant="filled" onClick={handleClick} sx={{ cursor: 'pointer' }} />;
             case 'WARNING':
-                return <Chip icon={<AlertCircle size={14} />} label="WARNING" color="warning" size="small" variant="filled" />;
+                return <Chip icon={<AlertCircle size={14} />} label="WARNING" color="warning" size="small" variant="filled" onClick={handleClick} sx={{ cursor: 'pointer' }} />;
             case 'CRITICAL':
-                return <Chip icon={<Activity size={14} />} label="CRITICAL" color="error" size="small" variant="filled" />;
+                return <Chip icon={<Activity size={14} />} label="CRITICAL" color="error" size="small" variant="filled" onClick={handleClick} sx={{ cursor: 'pointer' }} />;
             default:
-                return <Chip label={status} size="small" />;
+                return <Chip label={status} size="small" onClick={handleClick} sx={{ cursor: 'pointer' }} />;
         }
     };
 
@@ -105,10 +124,7 @@ export default function IngestionHealthPanel() {
                     </Box>
                 </Box>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <Typography variant="caption" color="text.secondary">
-                        Last update: {lastUpdated.toLocaleTimeString()}
-                    </Typography>
-                    <IconButton size="small" onClick={fetchData} disabled={loading}>
+                    <IconButton size="small" onClick={() => fetchData(selectedDate)} disabled={loading}>
                         <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
                     </IconButton>
                 </Box>
@@ -190,7 +206,7 @@ export default function IngestionHealthPanel() {
                                         )}
                                     </TableCell>
                                     <TableCell align="center">
-                                        {getStatusChip(row.health_status)}
+                                        {getStatusChip(row.health_status, row.provider_code)}
                                     </TableCell>
                                 </TableRow>
                             ))
