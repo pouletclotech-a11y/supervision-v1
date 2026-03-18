@@ -400,7 +400,7 @@ function DataValidationInner() {
         },
         { field: 'events_count', headerName: 'Evts', width: 70, align: 'right' },
         { field: 'unmatched_count', headerName: 'Unm', width: 70, align: 'right' },
-    ], []);
+    ], [isMounted, router]);
 
 
     const eventColumns: GridColDef[] = useMemo(() => [
@@ -561,7 +561,7 @@ function DataValidationInner() {
                 <Button size="small" onClick={() => setInspectEvent(params.row)}>Inspect</Button>
             )
         }
-    ], []);
+    ], [isMounted]);
 
     return (
         <Layout>

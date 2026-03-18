@@ -575,6 +575,7 @@ class EventRepository:
                 ).label("integrity_denominator"),
                 func.count().filter(
                     ImportLog.filename.ilike("%.xls%"),
+                    ImportLog.archive_path_pdf.is_(None),
                     func.jsonb_extract_path_text(ImportLog.import_metadata, 'pdf_support').is_(None)
                 ).label("missing_pdf")
             ).join(MonitoringProvider, ImportLog.provider_id == MonitoringProvider.id)
