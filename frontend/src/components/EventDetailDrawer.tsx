@@ -30,6 +30,11 @@ export default function EventDetailDrawer({ eventId, open, onClose }: EventDetai
     const [event, setEvent] = useState<any>(null);
     const [error, setError] = useState<string | null>(null);
 
+    const [isMounted, setIsMounted] = useState(false);
+    useEffect(() => {
+        setIsMounted(true);
+    }, []);
+
     useEffect(() => {
         if (open && eventId) {
             fetchEventDetails();
@@ -93,7 +98,9 @@ export default function EventDetailDrawer({ eventId, open, onClose }: EventDetai
                             </Box>
                             <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
                                 <Typography variant="caption" color="text.secondary">Occurred At</Typography>
-                                <Typography variant="body2">{format(new Date(event.created_at), 'dd/MM/yyyy HH:mm:ss')}</Typography>
+                                <Typography variant="body2">
+                                    {isMounted ? format(new Date(event.created_at), 'dd/MM/yyyy HH:mm:ss') : '...'}
+                                </Typography>
                             </Box>
                             {event.score !== null && (
                                 <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
@@ -118,7 +125,7 @@ export default function EventDetailDrawer({ eventId, open, onClose }: EventDetai
                         </Button>
                         <Button
                             component={Link}
-                            href={`/admin/imports/${event.import_id}`}
+                            href={`/admin/imports?id=${event.import_id}`}
                             variant="outlined"
                             fullWidth
                             size="small"

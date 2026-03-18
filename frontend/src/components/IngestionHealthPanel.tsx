@@ -59,6 +59,10 @@ export default function IngestionHealthPanel({ selectedDate }: IngestionHealthPa
     const [error, setError] = useState<string | null>(null);
     const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
     const router = useRouter();
+    const [isMounted, setIsMounted] = useState(false);
+    useEffect(() => {
+        setIsMounted(true);
+    }, []);
 
     const fetchData = async (dateStr?: string) => {
         setLoading(true);
@@ -69,7 +73,7 @@ export default function IngestionHealthPanel({ selectedDate }: IngestionHealthPa
                 const json = await res.json();
                 setData(json.summary);
                 setDailyReceipt(json.daily_receipt || []);
-                setLastUpdated(new Date());
+                if (isMounted) setLastUpdated(new Date());
                 setError(null);
             } else {
                 setError('Failed to fetch ingestion health summary');

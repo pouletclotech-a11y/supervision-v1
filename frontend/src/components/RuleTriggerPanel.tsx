@@ -66,6 +66,11 @@ export default function RuleTriggerPanel({ selectedDate }: RuleTriggerPanelProps
     const [drilldownTotal, setDrilldownTotal] = useState(0);
     const [drilldownPage, setDrilldownPage] = useState(1);
 
+    const [isMounted, setIsMounted] = useState(false);
+    useEffect(() => {
+        setIsMounted(true);
+    }, []);
+
     // Event Detail Drawer
     const [selectedEventId, setSelectedEventId] = useState<number | null>(null);
     const [drawerOpen, setDrawerOpen] = useState(false);
@@ -217,8 +222,10 @@ export default function RuleTriggerPanel({ selectedDate }: RuleTriggerPanelProps
                                         <Typography variant="body2">{row.distinct_sites}</Typography>
                                     </TableCell>
                                     <TableCell align="center">
-                                        <Tooltip title={new Date(row.last_trigger_at).toLocaleString()}>
-                                            <Typography variant="caption">{new Date(row.last_trigger_at).toLocaleTimeString()}</Typography>
+                                        <Tooltip title={isMounted ? new Date(row.last_trigger_at).toLocaleString() : ''}>
+                                            <Typography variant="caption">
+                                                {isMounted ? new Date(row.last_trigger_at).toLocaleTimeString() : '...'}
+                                            </Typography>
                                         </Tooltip>
                                     </TableCell>
                                     <TableCell align="center">
@@ -267,7 +274,7 @@ export default function RuleTriggerPanel({ selectedDate }: RuleTriggerPanelProps
                                     {drilldownData.map((item) => (
                                         <TableRow key={item.id} hover onClick={() => handleEventClick(item.id)} sx={{ cursor: 'pointer' }}>
                                             <TableCell sx={{ fontSize: '0.75rem', whiteSpace: 'nowrap' }}>
-                                                {format(new Date(item.matched_at), 'dd/MM HH:mm:ss')}
+                                                {isMounted ? format(new Date(item.matched_at), 'dd/MM HH:mm:ss') : '...'}
                                             </TableCell>
                                             <TableCell>
                                                 <Typography variant="body2" fontWeight={600}>{item.site_code}</Typography>

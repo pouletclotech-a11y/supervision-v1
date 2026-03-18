@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Layout from '../../../components/Layout';
 import { fetchWithAuth, API_ORIGIN } from '@/lib/api';
 import {
@@ -44,6 +45,10 @@ import { useAuth } from '../../../context/AuthContext';
 
 export default function ImportsPage() {
     const { user } = useAuth();
+    const router = useRouter();
+    const searchParams = useSearchParams();
+    const importIdParam = searchParams.get('id');
+
     const [imports, setImports] = useState<any[]>([]);
     const [total, setTotal] = useState(0);
     const [page, setPage] = useState(0);
@@ -74,6 +79,31 @@ export default function ImportsPage() {
     useEffect(() => {
         fetchImports();
     }, [page, rowsPerPage]);
+
+    // Handle Deep Linking
+    useEffect(() => {
+        if (importIdParam && imports.length > 0) {
+            const imp = imports.find(i => i.id.toString() === importIdParam);
+            if (imp) {
+                handleInspect(imp);
+            } else {
+                // If not in current page, we might need a direct fetch 
+                // but for now, we assume it's likely recent or on first page
+                const fetchSingle = async () => {
+                    try {
+                        const res = await fetchWithAuth(`/imports/${importIdParam}`);
+                        if (res.ok) {
+                            const data = await res.json();
+                            handleInspect(data);
+                        }
+                    } catch (e) {
+                        console.error("Failed to fetch deep-linked import", e);
+                    }
+                };
+                fetchSingle();
+            }
+        }
+    }, [importIdParam, imports.length]);
 
     const handleInspect = async (imp: any) => {
         setSelectedImport(imp);
@@ -226,19 +256,19 @@ export default function ImportsPage() {
                                 <Typography variant="subtitle2" color="text.secondary" gutterBottom>METADATA</Typography>
                                 <Paper variant="outlined" sx={{ p: 2, mb: 3, bgcolor: 'background.default' }}>
                                     <Grid container spacing={2}>
-                                        <Grid size={{ xs: 6 }}>
+                                        <Grid xs={6}>
                                             <Typography variant="caption" color="text.secondary">File Name</Typography>
                                             <Typography variant="body2" sx={{ wordBreak: 'break-all' }}>{selectedImport.filename}</Typography>
                                         </Grid>
-                                        <Grid size={{ xs: 6 }}>
+                                        <Grid xs={6}>
                                             <Typography variant="caption" color="text.secondary">Source Hash</Typography>
                                             <Typography variant="body2" sx={{ fontFamily: 'monospace', fontSize: '0.75rem' }}>{selectedImport.file_hash}</Typography>
                                         </Grid>
-                                        <Grid size={{ xs: 6 }}>
+                                        <Grid xs={6}>
                                             <Typography variant="caption" color="text.secondary">Adapter</Typography>
                                             <Typography variant="body2">{selectedImport.adapter_name}</Typography>
                                         </Grid>
-                                        <Grid size={{ xs: 6 }}>
+                                        <Grid xs={6}>
                                             <Typography variant="caption" color="text.secondary">Message ID</Typography>
                                             <Typography variant="body2" sx={{ wordBreak: 'break-all', fontSize: '0.75rem' }}>{selectedImport.source_message_id || 'N/A'}</Typography>
                                         </Grid>
