@@ -277,7 +277,18 @@ export default function RuleTriggerPanel({ selectedDate }: RuleTriggerPanelProps
                                                 {isMounted ? format(new Date(item.matched_at), 'dd/MM HH:mm:ss') : '...'}
                                             </TableCell>
                                             <TableCell>
-                                                <Typography variant="body2" fontWeight={600}>{item.site_code}</Typography>
+                                                <Typography 
+                                                    variant="body2" 
+                                                    fontWeight={600}
+                                                    color="primary.main"
+                                                    sx={{ cursor: 'pointer', '&:hover': { textDecoration: 'underline' } }}
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        router.push(`/client/${item.site_code}`);
+                                                    }}
+                                                >
+                                                    {item.site_code}
+                                                </Typography>
                                                 <Typography variant="caption" color="text.secondary">{item.client_name}</Typography>
                                             </TableCell>
                                             <TableCell sx={{ fontSize: '0.75rem', fontFamily: 'monospace', maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>

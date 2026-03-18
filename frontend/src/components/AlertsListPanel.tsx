@@ -20,10 +20,12 @@ import {
 } from '@mui/material';
 import { RefreshCw, Filter, ShieldAlert, ArrowUpRight, Clock } from 'lucide-react';
 import { fetchWithAuth } from '@/lib/api';
+import { useRouter } from 'next/navigation';
 import { format } from 'date-fns';
 import EventDetailDrawer from './EventDetailDrawer';
 
 export default function AlertsListPanel() {
+    const router = useRouter();
     const [alerts, setAlerts] = useState<any[]>([]);
     const [total, setTotal] = useState(0);
     const [loading, setLoading] = useState(true);
@@ -118,7 +120,17 @@ export default function AlertsListPanel() {
                                     </TableCell>
                                     <TableCell sx={{ fontWeight: 600 }}>{row.rule_name}</TableCell>
                                     <TableCell>
-                                        <Typography variant="body2" color="primary.main">{row.site_code}</Typography>
+                                        <Typography 
+                                            variant="body2" 
+                                            color="primary.main"
+                                            sx={{ cursor: 'pointer', '&:hover': { textDecoration: 'underline' } }}
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                router.push(`/client/${row.site_code}`);
+                                            }}
+                                        >
+                                            {row.site_code}
+                                        </Typography>
                                     </TableCell>
                                     <TableCell>
                                         <Typography variant="caption">{row.provider_name}</Typography>

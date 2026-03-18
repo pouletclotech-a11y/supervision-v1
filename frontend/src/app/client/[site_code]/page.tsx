@@ -18,8 +18,10 @@ import {
     TableContainer,
     TableHead,
     TableRow,
+    TablePagination,
     Pagination,
-    Stack
+    Stack,
+    Button
 } from '@mui/material';
 import {
     Activity,
@@ -40,6 +42,12 @@ export default function ClientSitePage({ params }: { params: { site_code: string
     const [data, setData] = useState<any>(null);
     const [error, setError] = useState<string | null>(null);
     const [tab, setTab] = useState(0);
+    const [isMounted, setIsMounted] = useState(false);
+    const [ruleFilter, setRuleFilter] = useState<string | null>(null);
+
+    useEffect(() => {
+        setIsMounted(true);
+    }, []);
 
     // Pagination params
     const [eventsPage, setEventsPage] = useState(1);
@@ -114,7 +122,16 @@ export default function ClientSitePage({ params }: { params: { site_code: string
                             Client: <strong>{data?.client_name}</strong> | Supervision consolidée (7 derniers jours)
                         </Typography>
                     </Box>
-                    <Box sx={{ display: 'flex', gap: 1 }}>
+                    <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+                        <Button 
+                            variant="outlined" 
+                            size="small" 
+                            startIcon={<BarChart3 size={14} />}
+                            onClick={() => window.open(`/admin/data-validation?site=${site_code}`, '_blank')}
+                            sx={{ mr: 1, textTransform: 'none', borderRadius: 2 }}
+                        >
+                            View Data Validation
+                        </Button>
                         <Chip icon={<CheckCircle size={14} />} label="Operational" color="success" size="small" />
                     </Box>
                 </Box>
@@ -124,8 +141,8 @@ export default function ClientSitePage({ params }: { params: { site_code: string
                     {[
                         { title: 'Événements (7j)', value: data?.kpis.events_count, icon: <Activity />, color: 'primary' },
                         { title: 'Alertes (7j)', value: data?.kpis.alerts_count, icon: <ShieldAlert />, color: 'error' },
-                        { title: 'Dernier Événement', value: data?.kpis.last_event_at ? format(new Date(data.kpis.last_event_at), 'dd/MM HH:mm') : '-', icon: <Clock />, color: 'info' },
-                        { title: 'Dernière Alerte', value: data?.kpis.last_alert_at ? format(new Date(data.kpis.last_alert_at), 'dd/MM HH:mm') : '-', icon: <AlertTriangle />, color: 'warning' },
+                        { title: 'Dernier Événement', value: (data?.kpis.last_event_at && isMounted) ? format(new Date(data.kpis.last_event_at), 'dd/MM HH:mm') : (isMounted ? '-' : '...'), icon: <Clock />, color: 'info' },
+                        { title: 'Dernière Alerte', value: (data?.kpis.last_alert_at && isMounted) ? format(new Date(data.kpis.last_alert_at), 'dd/MM HH:mm') : (isMounted ? '-' : '...'), icon: <AlertTriangle />, color: 'warning' },
                     ].map((kpi, i) => (
                         <Grid item xs={12} sm={6} md={3} key={i}>
                             <Paper sx={{ p: 3 }}>
@@ -169,7 +186,7 @@ export default function ClientSitePage({ params }: { params: { site_code: string
                                                     {data?.timeline.events.events.map((evt: any) => (
                                                         <TableRow key={evt.id} hover sx={{ cursor: 'pointer' }} onClick={() => handleEventClick(evt.id)}>
                                                             <TableCell sx={{ fontSize: '0.75rem', whiteSpace: 'nowrap' }}>
-                                                                {format(new Date(evt.timestamp), 'dd/MM HH:mm:ss')}
+                                                                {isMounted ? format(new Date(evt.timestamp), 'dd/MM HH:mm:ss') : '...'}
                                                             </TableCell>
                                                             <TableCell sx={{ fontSize: '0.8rem', fontFamily: 'monospace', maxWidth: 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                                                 {evt.raw_message}
@@ -189,7 +206,7 @@ export default function ClientSitePage({ params }: { params: { site_code: string
                                             <Pagination
                                                 count={Math.ceil(data?.timeline.events.total / limit)}
                                                 page={eventsPage}
-                                                onChange={(e, v) => setEventsPage(v)}
+                                                onChange={(e: any, v: number) => setEventsPage(v)}
                                                 size="small"
                                             />
                                         </Stack>
@@ -207,10 +224,10 @@ export default function ClientSitePage({ params }: { params: { site_code: string
                                                     </TableRow>
                                                 </TableHead>
                                                 <TableBody>
-                                                    {data?.timeline.alerts.items.map((alert: any) => (
+                                                    {(ruleFilter ? data?.timeline.alerts.items.filter((a: any) => a.rule_name === ruleFilter) : data?.timeline.alerts.items).map((alert: any) => (
                                                         <TableRow key={alert.hit_id} hover sx={{ cursor: 'pointer' }} onClick={() => handleEventClick(alert.event_id)}>
                                                             <TableCell sx={{ fontSize: '0.75rem' }}>
-                                                                {format(new Date(alert.created_at), 'dd/MM/yyyy HH:mm')}
+                                                                {isMounted ? format(new Date(alert.created_at), 'dd/MM/yyyy HH:mm') : '...'}
                                                             </TableCell>
                                                             <TableCell sx={{ fontWeight: 600 }}>{alert.rule_name}</TableCell>
                                                             <TableCell>
@@ -228,7 +245,7 @@ export default function ClientSitePage({ params }: { params: { site_code: string
                                             <Pagination
                                                 count={Math.ceil(data?.timeline.alerts.total / limit)}
                                                 page={alertsPage}
-                                                onChange={(e, v) => setAlertsPage(v)}
+                                                onChange={(e: any, v: number) => setAlertsPage(v)}
                                                 size="small"
                                             />
                                         </Stack>
@@ -246,14 +263,29 @@ export default function ClientSitePage({ params }: { params: { site_code: string
                             </Typography>
                             <Box sx={{ mt: 3, display: 'flex', flexDirection: 'column', gap: 2 }}>
                                 {data?.kpis.top_rules.map((rule: any, i: number) => (
-                                    <Box key={i}>
+                                    <Box 
+                                        key={i} 
+                                        sx={{ 
+                                            cursor: 'pointer', 
+                                            p: 1, 
+                                            borderRadius: 1, 
+                                            bgcolor: ruleFilter === rule.rule_name ? 'action.selected' : 'transparent',
+                                            '&:hover': { bgcolor: 'action.hover' }
+                                        }}
+                                        onClick={() => {
+                                            setRuleFilter(ruleFilter === rule.rule_name ? null : rule.rule_name);
+                                            setTab(1); // Switch to alerts tab
+                                        }}
+                                    >
                                         <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
-                                            <Typography variant="body2" fontWeight={600}>{rule.rule_name}</Typography>
+                                            <Typography variant="body2" fontWeight={600} color={ruleFilter === rule.rule_name ? 'primary.main' : 'text.primary'}>
+                                                {rule.rule_name}
+                                            </Typography>
                                             <Typography variant="body2" fontWeight={700} color="primary">{rule.count}</Typography>
                                         </Box>
                                         <Box sx={{ width: '100%', height: 6, bgcolor: 'background.default', borderRadius: 3, overflow: 'hidden' }}>
                                             <Box sx={{
-                                                width: `${(rule.count / data.kpis.alerts_count) * 100}%`,
+                                                width: `${(rule.count / (data.kpis.alerts_count || 1)) * 100}%`,
                                                 height: '100%',
                                                 bgcolor: 'primary.main',
                                                 borderRadius: 3
@@ -261,6 +293,15 @@ export default function ClientSitePage({ params }: { params: { site_code: string
                                         </Box>
                                     </Box>
                                 ))}
+                                {ruleFilter && (
+                                    <Button 
+                                        size="small" 
+                                        onClick={() => setRuleFilter(null)}
+                                        sx={{ mt: 1, textTransform: 'none' }}
+                                    >
+                                        Clear Filter
+                                    </Button>
+                                )}
                                 {data?.kpis.top_rules.length === 0 && (
                                     <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center', py: 4 }}>
                                         Aucune alerte récente.
