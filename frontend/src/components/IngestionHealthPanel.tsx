@@ -146,11 +146,11 @@ export default function IngestionHealthPanel({ dateFrom, dateTo }: IngestionHeal
                             <TableCell sx={{ fontWeight: 700 }}>Provider</TableCell>
                             <TableCell align="center" sx={{ fontWeight: 700 }}>Emails</TableCell>
                             <TableCell align="center" sx={{ fontWeight: 700 }}>XLS</TableCell>
-                            <TableCell align="center" sx={{ fontWeight: 700 }}>PDF</TableCell>
+                            <TableCell align="center" sx={{ fontWeight: 700 }}>PDF Reçus</TableCell>
                             <TableCell align="center" sx={{ fontWeight: 700 }}>Events</TableCell>
                             <TableCell align="center" sx={{ fontWeight: 700 }}>Integrity</TableCell>
-                            <TableCell align="center" sx={{ fontWeight: 700 }}>Miss. PDF</TableCell>
-                            <TableCell align="center" sx={{ fontWeight: 700 }}>Status</TableCell>
+                            <TableCell align="center" sx={{ fontWeight: 700 }}>PDF Manquants</TableCell>
+                            <TableCell align="center" sx={{ fontWeight: 700 }}>Statut</TableCell>
                         </TableRow>
                     </TableHead>
                     <TableBody>

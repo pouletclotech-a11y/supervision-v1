@@ -547,6 +547,7 @@ class EventRepository:
                 func.sum(
                     case(
                         (ImportLog.filename.ilike("%.pdf%"), 1),
+                        (ImportLog.archive_path_pdf.isnot(None), 1),
                         (func.jsonb_exists(ImportLog.import_metadata, 'pdf_support'), 1),
                         (ImportLog.import_metadata['pdf_support'].isnot(None), 1),
                         (ImportLog.import_metadata['secondary_filename'].astext.ilike("%.pdf%"), 1),

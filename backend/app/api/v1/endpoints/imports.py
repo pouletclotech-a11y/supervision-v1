@@ -17,8 +17,8 @@ async def read_imports(
     skip: int = 0,
     limit: int = 20,
     status: Optional[str] = None,
-    date_from: Optional[datetime] = None,
-    date_to: Optional[datetime] = None,
+    date_from: Optional[date] = None,
+    date_to: Optional[date] = None,
     db: AsyncSession = Depends(get_db),
     provider_ids: Optional[list[int]] = Depends(deps.get_user_provider_ids)
 ) -> Any:

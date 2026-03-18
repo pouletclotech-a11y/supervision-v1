@@ -330,7 +330,22 @@ function DataValidationInner() {
     // COLUMNS
     const importColumns: GridColDef[] = useMemo(() => [
         { field: 'id', headerName: 'ID', width: 70 },
-        { field: 'created_at', headerName: 'Date', width: 170, valueFormatter: (params: any) => (params.value && isMounted) ? new Date(params.value).toLocaleString() : '...' },
+        { 
+            field: 'created_at', 
+            headerName: 'Date', 
+            width: 170, 
+            renderCell: (params: GridRenderCellParams) => {
+                if (!params.value) return <Typography variant="caption" color="text.disabled">—</Typography>;
+                if (!isMounted) return <Typography variant="caption">...</Typography>;
+                try {
+                    const date = new Date(params.value);
+                    if (isNaN(date.getTime())) return <Typography variant="caption" color="error">Invalid Date</Typography>;
+                    return <Typography sx={{ fontSize: 12 }}>{date.toLocaleString()}</Typography>;
+                } catch (e) {
+                    return <Typography variant="caption" color="error">Error</Typography>;
+                }
+            }
+        },
         { field: 'filename', headerName: 'File', minWidth: 200, width: 350 },
         {
             field: 'pdf_support_path', headerName: 'PDF', width: 60,
@@ -391,12 +406,27 @@ function DataValidationInner() {
     const eventColumns: GridColDef[] = useMemo(() => [
         { field: 'id', headerName: 'ID', width: 80 },
         {
-            field: 'time', headerName: 'Date / Heure', width: 180,
-            renderCell: (params: GridRenderCellParams) => (
-                <Typography sx={{ fontSize: 11, fontWeight: 'medium' }}>
-                    {(params.value && isMounted) ? new Date(params.value).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' }) : '...'}
-                </Typography>
-            )
+            field: 'time', 
+            headerName: 'Date / Heure', 
+            width: 180,
+            renderCell: (params: GridRenderCellParams) => {
+                if (!params.value) return <Typography variant="caption" color="text.disabled">—</Typography>;
+                if (!isMounted) return <Typography variant="caption" sx={{ fontSize: 11 }}>...</Typography>;
+                try {
+                    const date = new Date(params.value);
+                    if (isNaN(date.getTime())) return <Typography variant="caption" color="error" sx={{ fontSize: 11 }}>Invalid Date</Typography>;
+                    return (
+                        <Typography sx={{ fontSize: 11, fontWeight: 'medium' }}>
+                            {date.toLocaleString('fr-FR', { 
+                                day: '2-digit', month: '2-digit', year: 'numeric', 
+                                hour: '2-digit', minute: '2-digit', second: '2-digit' 
+                            })}
+                        </Typography>
+                    );
+                } catch (e) {
+                    return <Typography variant="caption" color="error" sx={{ fontSize: 11 }}>Error</Typography>;
+                }
+            }
         },
         {
             field: 'weekday_label', headerName: 'Jour', width: 70,

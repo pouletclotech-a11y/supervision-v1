@@ -34,7 +34,8 @@ monitoring:
       default: 0        # 0 = monitoring désactivé
       by_provider: 
         SPGO: 4
-        YPSILON: 2
+        YPSILON: 0
+        CORS: 3
         HISTO: 1
 
 
