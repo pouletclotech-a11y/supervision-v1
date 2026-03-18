@@ -168,8 +168,11 @@ export default function IngestionHealthPanel({ selectedDate }: IngestionHealthPa
                         ) : (
                             data.map((row: HealthRow) => (
                                 <TableRow key={row.provider_id} hover>
-                                    <TableCell>
-                                        <Typography variant="body2" fontWeight={600}>{row.provider_label}</Typography>
+                                    <TableCell 
+                                        sx={{ cursor: 'pointer' }}
+                                        onClick={() => router.push(`/admin/data-validation?provider=${row.provider_code}&date=${selectedDate}`)}
+                                    >
+                                        <Typography variant="body2" fontWeight={600} color="primary.main">{row.provider_label}</Typography>
                                         <Typography variant="caption" color="text.secondary">{row.provider_code}</Typography>
                                     </TableCell>
                                     <TableCell align="center">
@@ -189,8 +192,14 @@ export default function IngestionHealthPanel({ selectedDate }: IngestionHealthPa
                                             <FileText size={12} /> {row.total_pdf}
                                         </Box>
                                     </TableCell>
-                                    <TableCell align="center">
-                                        <Typography variant="body2" fontWeight={700}>{row.total_events.toLocaleString()}</Typography>
+                                    <TableCell 
+                                        align="center"
+                                        sx={{ cursor: 'pointer' }}
+                                        onClick={() => router.push(`/admin/data-validation?provider=${row.provider_code}&date=${selectedDate}`)}
+                                    >
+                                        <Typography variant="body2" fontWeight={700} color="primary.main">
+                                            {row.total_events.toLocaleString()}
+                                        </Typography>
                                     </TableCell>
                                     <TableCell align="center">
                                         <Tooltip title={`Total: ${row.integrity_numerator} / Attendus: ${row.integrity_denominator}`}>
@@ -204,7 +213,14 @@ export default function IngestionHealthPanel({ selectedDate }: IngestionHealthPa
                                     </TableCell>
                                     <TableCell align="center">
                                         {row.missing_pdf > 0 ? (
-                                            <Chip label={row.missing_pdf} size="small" color="warning" variant="outlined" />
+                                            <Chip 
+                                                label={row.missing_pdf} 
+                                                size="small" 
+                                                color="warning" 
+                                                variant="outlined" 
+                                                onClick={() => router.push(`/admin/data-validation?provider=${row.provider_code}&date=${selectedDate}&has_error=true`)}
+                                                sx={{ cursor: 'pointer' }}
+                                            />
                                         ) : (
                                             <Typography variant="caption" color="text.secondary">-</Typography>
                                         )}

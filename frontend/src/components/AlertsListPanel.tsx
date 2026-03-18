@@ -31,9 +31,13 @@ export default function AlertsListPanel() {
     const [page, setPage] = useState(1);
     const limit = 10;
 
-    // Detail Drawer
     const [selectedEventId, setSelectedEventId] = useState<number | null>(null);
     const [drawerOpen, setDrawerOpen] = useState(false);
+    const [isMounted, setIsMounted] = useState(false);
+
+    useEffect(() => {
+        setIsMounted(true);
+    }, []);
 
     const fetchAlerts = async () => {
         setLoading(true);
@@ -110,7 +114,7 @@ export default function AlertsListPanel() {
                                     onClick={() => handleRowClick(row.event_id)}
                                 >
                                     <TableCell sx={{ fontSize: '0.75rem' }}>
-                                        {format(new Date(row.created_at), 'dd/MM HH:mm:ss')}
+                                        {isMounted ? format(new Date(row.created_at), 'dd/MM HH:mm:ss') : '...'}
                                     </TableCell>
                                     <TableCell sx={{ fontWeight: 600 }}>{row.rule_name}</TableCell>
                                     <TableCell>
