@@ -336,11 +336,10 @@ function DataValidationInner() {
             width: 170, 
             renderCell: (params: GridRenderCellParams) => {
                 if (!params.value) return <Typography variant="caption" color="text.disabled">—</Typography>;
-                if (!isMounted) return <Typography variant="caption">...</Typography>;
                 try {
                     const date = new Date(params.value);
                     if (isNaN(date.getTime())) return <Typography variant="caption" color="error">Invalid Date</Typography>;
-                    return <Typography sx={{ fontSize: 12 }}>{date.toLocaleString()}</Typography>;
+                    return <Typography suppressHydrationWarning sx={{ fontSize: 12 }}>{date.toLocaleString()}</Typography>;
                 } catch (e) {
                     return <Typography variant="caption" color="error">Error</Typography>;
                 }
@@ -411,12 +410,11 @@ function DataValidationInner() {
             width: 180,
             renderCell: (params: GridRenderCellParams) => {
                 if (!params.value) return <Typography variant="caption" color="text.disabled">—</Typography>;
-                if (!isMounted) return <Typography variant="caption" sx={{ fontSize: 11 }}>...</Typography>;
                 try {
                     const date = new Date(params.value);
                     if (isNaN(date.getTime())) return <Typography variant="caption" color="error" sx={{ fontSize: 11 }}>Invalid Date</Typography>;
                     return (
-                        <Typography sx={{ fontSize: 11, fontWeight: 'medium' }}>
+                        <Typography suppressHydrationWarning sx={{ fontSize: 11, fontWeight: 'medium' }}>
                             {date.toLocaleString('fr-FR', { 
                                 day: '2-digit', month: '2-digit', year: 'numeric', 
                                 hour: '2-digit', minute: '2-digit', second: '2-digit' 
@@ -479,7 +477,7 @@ function DataValidationInner() {
                     <Box sx={{ p: 0.5 }}>
                         {rules.map((r: any) => (
                             <Typography key={r.id} variant="caption" display="block" sx={{ fontSize: 10 }}>
-                                • {r.name} ({isMounted ? new Date(r.matched_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '...'})
+                                • {r.name} ({new Date(r.matched_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})
                             </Typography>
                         ))}
                     </Box>
@@ -1055,7 +1053,12 @@ function DataValidationInner() {
             </Dialog>
 
             <Box sx={{ position: 'fixed', bottom: 5, right: 10, opacity: 0.5, pointerEvents: 'none', zIndex: 9999 }}>
-                <Chip label={`Build: ${new Date().toISOString().split('T')[0]}`} size="small" variant="outlined" sx={{ fontSize: 10, bgcolor: 'background.paper' }} />
+                <Chip 
+                    label={`Build: ${new Date().toISOString().split('T')[0]}`} 
+                    size="small" 
+                    variant="outlined" 
+                    sx={{ fontSize: 10, bgcolor: 'background.paper' }} 
+                />
             </Box>
         </Layout>
     );
