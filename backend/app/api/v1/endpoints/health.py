@@ -46,16 +46,16 @@ class IngestionHealthSummary(BaseModel):
     daily_receipt: List[DailyReceiptStatus]
 
 class CatalogItemV4(BaseModel):
-    code: Optional[str] = "N/A"
-    canonical_label: str
-    top_message: Optional[str]
-    providers: str
-    category: Optional[str]
-    occurrences: int
-    variant_count: int
-    confidence_score: float
-    last_seen: Optional[datetime]
-    token_stats: Optional[List[Dict[str, Any]]] = None
+    code: str | None = "N/A"
+    canonical_label: str = "N/A"
+    top_message: str | None = None
+    providers: str = ""
+    category: str | None = None
+    occurrences: int = 0
+    variant_count: int = 0
+    confidence_score: float = 0.0
+    last_seen: datetime | None = None
+    token_stats: List[Dict[str, Any]] | None = None
 
 class CatalogResponseV4(BaseModel):
     items: List[CatalogItemV4]

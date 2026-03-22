@@ -343,7 +343,7 @@ class EventRepository:
         
         sql = f"""
             SELECT 
-                e.raw_code as code,
+                COALESCE(e.raw_code, 'N/A') as code,
                 normalized_message as message,
                 COUNT(*) as occurrences,
                 MAX(time) as last_seen
@@ -353,6 +353,7 @@ class EventRepository:
             {where_sql}
             GROUP BY 1, 2
             ORDER BY code, occurrences DESC
+            LIMIT 500
         """
         # Note: ANY() expects a list or tuple that asyncpg can handle as a postgres array
         result = await self.session.execute(text(sql), {"codes": list(codes)})

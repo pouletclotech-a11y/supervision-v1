@@ -166,14 +166,14 @@ async def get_intrusion_stats(
     """
     Count unique sites with at least one alert hit for a given period (default today).
     """
-    from sqlalchemy import func
+    from sqlalchemy import func, Date
     
     target_date = date_from or date.today()
     
     stmt = (
         select(func.count(func.distinct(Event.site_code)))
         .join(EventRuleHit, Event.id == EventRuleHit.event_id)
-        .where(func.cast(EventRuleHit.created_at, date) == target_date)
+        .where(func.cast(EventRuleHit.created_at, Date) == target_date)
     )
     
     if provider_ids is not None:
