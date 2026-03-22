@@ -1,9 +1,9 @@
 import logging
 import pytz
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
 from datetime import datetime, timedelta, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update, func, case, cast, Numeric
+from sqlalchemy import select, update, func, case, cast, Numeric, text
 from sqlalchemy.dialects.postgresql import insert
 from app.db.models import (
     Event, Site, ImportLog, AlertRule, EventRuleHit, SiteConnection, 
@@ -187,6 +187,186 @@ class EventRepository:
         await self.session.execute(stmt)
         # Note: Do not commit here, handled by caller (e.g. at end of batch)
         
+    async def get_event_catalog_v4(
+        self, 
+        q: Optional[str] = None, 
+        code: Optional[str] = None,
+        provider_status: Optional[str] = None, # 'active', 'archived', 'deleted', 'all'
+        mode: str = "COMPACT",
+        sort_by: str = "occurrences",
+        sort_dir: str = "desc",
+        limit: int = 100,
+        offset: int = 0
+    ) -> Dict[str, Any]:
+        """
+        Version avancée de l'annuaire (V4).
+        Supporte l'agrégation compacte (1 ligne/code) ou détaillée.
+        """
+        where_clauses = []
+        params = {"limit": limit, "offset": offset}
+        
+        # Filtres Code / Message
+        if q:
+            where_clauses.append("e.normalized_message ILIKE :q")
+            params["q"] = f"%{q}%"
+        if code:
+            where_clauses.append("e.raw_code ILIKE :code")
+            params["code"] = f"{code}%"
+            
+        # Filtre Statut Prestataire
+        if provider_status == "active":
+            where_clauses.append("p.is_active = true AND p.is_archived = false AND p.deleted_at IS NULL")
+        elif provider_status == "archived":
+            where_clauses.append("p.is_archived = true")
+        elif provider_status == "deleted":
+            where_clauses.append("p.deleted_at IS NULL") # On filtre par défaut les non-delete, sauf si all
+        
+        # Par défaut, on ne montre pas les supprimés sauf demande explicite ou 'all'
+        if provider_status != "all" and provider_status != "deleted":
+             where_clauses.append("p.deleted_at IS NULL")
+
+        where_sql = ""
+        if where_clauses:
+            where_sql = "WHERE " + " AND ".join(where_clauses)
+
+        # Mapping des tris
+        sort_map = {
+            "code": "e.raw_code",
+            "occurrences": "occurrences",
+            "last_seen": "last_seen",
+            "variant_count": "variant_count"
+        }
+        order_col = sort_map.get(sort_by, "occurrences")
+        order_dir = "DESC" if sort_dir.lower() == "desc" else "ASC"
+
+        if mode == "COMPACT":
+            sql = f"""
+                SELECT 
+                    COALESCE(e.raw_code, 'N/A') as code,
+                    MODE() WITHIN GROUP (ORDER BY COALESCE(e.normalized_message, '')) as top_message,
+                    MODE() WITHIN GROUP (ORDER BY e.category) as category,
+                    STRING_AGG(DISTINCT p.code, ', ' ORDER BY p.code) as providers,
+                    COUNT(*) as occurrences,
+                    COUNT(DISTINCT COALESCE(e.normalized_message, '')) as variant_count,
+                    MAX(e.time) as last_seen,
+                    COUNT(*) OVER() as total_count
+                FROM events e
+                JOIN imports i ON e.import_id = i.id
+                JOIN monitoring_providers p ON i.provider_id = p.id
+                {where_sql}
+                GROUP BY 1
+                ORDER BY {order_col} {order_dir}, last_seen DESC
+                LIMIT :limit OFFSET :offset
+            """
+        else:
+            # Mode détaillé (actuel)
+            sql = f"""
+                SELECT 
+                    COALESCE(e.raw_code, 'N/A') as code,
+                    COALESCE(e.normalized_message, '') as message,
+                    STRING_AGG(DISTINCT p.code, ', ' ORDER BY p.code) as providers,
+                    STRING_AGG(DISTINCT COALESCE(e.normalized_type, 'GENERIC'), ', ' ORDER BY COALESCE(e.normalized_type, 'GENERIC')) as actions,
+                    COALESCE(e.category, 'UNK') as category,
+                    COUNT(*) as occurrences,
+                    MAX(e.time) as last_seen,
+                    COUNT(*) OVER() as total_count
+                FROM events e
+                JOIN imports i ON e.import_id = i.id
+                JOIN monitoring_providers p ON i.provider_id = p.id
+                {where_sql}
+                GROUP BY 1, 2, 5
+                ORDER BY {order_col} {order_dir}, last_seen DESC
+                LIMIT :limit OFFSET :offset
+            """
+
+        result = await self.session.execute(text(sql), params)
+        rows = [dict(r._mapping) for r in result.all()]
+        total = rows[0]["total_count"] if rows else 0
+        
+        return {
+            "items": rows,
+            "total": total
+        }
+
+    async def get_event_variants(self, code: str, provider_status: str = "active") -> List[Dict]:
+        """Retourne les variantes de messages pour un code donné, filtrées par statut prestataire."""
+        where_clauses = ["e.raw_code = :code"]
+        
+        if provider_status == "active":
+            where_clauses.append("p.is_active = true AND p.is_archived = false AND p.deleted_at IS NULL")
+        elif provider_status == "archived":
+            where_clauses.append("p.is_archived = true")
+        elif provider_status == "deleted":
+            where_clauses.append("p.deleted_at IS NOT NULL") # Fix: should be IS NOT NULL for deleted
+        
+        if provider_status != "all" and provider_status != "deleted":
+            where_clauses.append("p.deleted_at IS NULL")
+
+        where_sql = "WHERE " + " AND ".join(where_clauses)
+        
+        sql = f"""
+            SELECT 
+                normalized_message as message,
+                COUNT(*) as occurrences,
+                MAX(time) as last_seen
+            FROM events e
+            JOIN imports i ON e.import_id = i.id
+            JOIN monitoring_providers p ON i.provider_id = p.id
+            {where_sql}
+            GROUP BY 1
+            ORDER BY occurrences DESC
+        """
+        result = await self.session.execute(text(sql), {"code": code})
+        return [dict(r._mapping) for r in result.all()]
+
+    async def get_many_event_variants(self, codes: List[str], provider_status: str = "active") -> Dict[str, List[Dict]]:
+        """
+        Fetch variants for multiple codes in one query.
+        Returns map: code -> [variants]
+        """
+        if not codes: return {}
+
+        where_clauses = ["e.raw_code = ANY(:codes)"]
+        if provider_status == "active":
+            where_clauses.append("p.is_active = true")
+            where_clauses.append("p.is_archived = false")
+        elif provider_status == "archived":
+            where_clauses.append("p.is_archived = true")
+        elif provider_status == "deleted":
+            where_clauses.append("p.deleted_at IS NOT NULL")
+        
+        # Guard clause: always filter out deleted unless explicitly requested
+        if provider_status != "deleted":
+            where_clauses.append("p.deleted_at IS NULL")
+
+        where_sql = "WHERE " + " AND ".join(where_clauses)
+        
+        sql = f"""
+            SELECT 
+                e.raw_code as code,
+                normalized_message as message,
+                COUNT(*) as occurrences,
+                MAX(time) as last_seen
+            FROM events e
+            JOIN imports i ON e.import_id = i.id
+            JOIN monitoring_providers p ON i.provider_id = p.id
+            {where_sql}
+            GROUP BY 1, 2
+            ORDER BY code, occurrences DESC
+        """
+        # Note: ANY() expects a list or tuple that asyncpg can handle as a postgres array
+        result = await self.session.execute(text(sql), {"codes": list(codes)})
+        rows = [dict(r._mapping) for r in result.all()]
+        
+        mapping = {c: [] for c in codes}
+        for r in rows:
+            mapping[r["code"]].append({
+                "message": r["message"],
+                "occurrences": r["occurrences"],
+                "last_seen": r["last_seen"]
+            })
+        return mapping
+        
     async def get_rule_hits_for_events(self, event_ids: List[int]) -> Dict[int, List[Dict]]:
         """
         Fetch all triggered rules for a list of events.
@@ -216,7 +396,14 @@ class EventRepository:
         conditions = result.scalars().all()
         return {c.code: c for c in conditions}
 
-    async def get_events_for_rule(self, rule_id: int, page: int = 1, limit: int = 50):
+    async def get_events_for_rule(
+        self, 
+        rule_id: int, 
+        page: int = 1, 
+        limit: int = 50,
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None
+    ):
         """
         Drill-down: Fetch events that triggered a specific rule.
         Returns (items, total).
@@ -235,8 +422,14 @@ class EventRepository:
             .join(ImportLog, Event.import_id == ImportLog.id)
             .join(MonitoringProvider, ImportLog.provider_id == MonitoringProvider.id)
             .where(EventRuleHit.rule_id == rule_id)
-            .order_by(EventRuleHit.created_at.desc())
         )
+
+        if start_date:
+            stmt = stmt.where(EventRuleHit.created_at >= start_date)
+        if end_date:
+            stmt = stmt.where(EventRuleHit.created_at <= end_date)
+
+        stmt = stmt.order_by(EventRuleHit.created_at.desc())
         
         # Pagination
         count_stmt = select(func.count()).select_from(stmt.subquery())
@@ -593,6 +786,9 @@ class EventRepository:
                 MonitoringProvider.id.label("provider_id"),
                 MonitoringProvider.label.label("provider_label"),
                 MonitoringProvider.code.label("provider_code"),
+                MonitoringProvider.expected_emails_per_day,
+                MonitoringProvider.expected_interval_minutes,
+                MonitoringProvider.monitoring_enabled,
                 func.coalesce(stats_stmt.c.total_imports, 0).label("total_imports"),
                 func.coalesce(stats_stmt.c.total_emails, 0).label("total_emails"),
                 func.coalesce(stats_stmt.c.total_xls, 0).label("total_xls"),
@@ -621,6 +817,9 @@ class EventRepository:
                 "provider_id": row.provider_id,
                 "provider_label": row.provider_label,
                 "provider_code": row.provider_code,
+                "expected_emails_per_day": row.expected_emails_per_day,
+                "expected_interval_minutes": row.expected_interval_minutes,
+                "monitoring_enabled": row.monitoring_enabled,
                 "total_imports": row.total_imports,
                 "total_emails": row.total_emails,
                 "total_xls": row.total_xls,

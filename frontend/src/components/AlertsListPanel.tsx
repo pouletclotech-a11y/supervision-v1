@@ -24,7 +24,12 @@ import { useRouter } from 'next/navigation';
 import { format } from 'date-fns';
 import EventDetailDrawer from './EventDetailDrawer';
 
-export default function AlertsListPanel() {
+interface AlertsListPanelProps {
+    dateFrom?: string;
+    dateTo?: string;
+}
+
+export default function AlertsListPanel({ dateFrom, dateTo }: AlertsListPanelProps) {
     const router = useRouter();
     const [alerts, setAlerts] = useState<any[]>([]);
     const [total, setTotal] = useState(0);
@@ -35,16 +40,15 @@ export default function AlertsListPanel() {
 
     const [selectedEventId, setSelectedEventId] = useState<number | null>(null);
     const [drawerOpen, setDrawerOpen] = useState(false);
-    const [isMounted, setIsMounted] = useState(false);
-
-    useEffect(() => {
-        setIsMounted(true);
-    }, []);
 
     const fetchAlerts = async () => {
         setLoading(true);
         try {
-            const res = await fetchWithAuth(`/alerts/?page=${page}&limit=${limit}`);
+            let url = `/alerts/?page=${page}&limit=${limit}`;
+            if (dateFrom) url += `&date_from=${dateFrom}`;
+            if (dateTo) url += `&date_to=${dateTo}`;
+            
+            const res = await fetchWithAuth(url);
             if (res.ok) {
                 const json = await res.json();
                 setAlerts(json.items);
@@ -54,7 +58,8 @@ export default function AlertsListPanel() {
                 setError('Failed to fetch alerts');
             }
         } catch (err) {
-            setError('Error connecting to alerts API');
+            console.error("Alerts API Error:", err);
+            setError('Erreur lors de la connexion à l\'API Alerts');
         } finally {
             setLoading(false);
         }
@@ -62,7 +67,7 @@ export default function AlertsListPanel() {
 
     useEffect(() => {
         fetchAlerts();
-    }, [page]);
+    }, [page, dateFrom, dateTo]);
 
     const handleRowClick = (eventId: number) => {
         setSelectedEventId(eventId);
@@ -78,7 +83,9 @@ export default function AlertsListPanel() {
                     </Box>
                     <Box>
                         <Typography variant="h6" fontWeight={700}>Individual Alerts</Typography>
-                        <Typography variant="caption" color="text.secondary">Real-time detection hits</Typography>
+                        <Typography variant="caption" color="text.secondary">
+                            {dateFrom && dateTo ? `Real-time hits (${dateFrom} au ${dateTo})` : 'Real-time detection hits'}
+                        </Typography>
                     </Box>
                 </Box>
                 <IconButton size="small" onClick={fetchAlerts} disabled={loading}>
@@ -101,11 +108,15 @@ export default function AlertsListPanel() {
                         </TableRow>
                     </TableHead>
                     <TableBody>
-                        {loading && alerts.length === 0 ? (
+                        {loading ? (
                             <TableRow><TableCell colSpan={6} align="center" sx={{ py: 8 }}><CircularProgress size={24} /></TableCell></TableRow>
+                        ) : error ? (
+                            <TableRow><TableCell colSpan={6} align="center" sx={{ py: 8 }}>
+                                <Typography variant="body2" color="error">{error}</Typography>
+                            </TableCell></TableRow>
                         ) : alerts.length === 0 ? (
                             <TableRow><TableCell colSpan={6} align="center" sx={{ py: 8 }}>
-                                <Typography variant="body2" color="text.secondary">Aucune alerte détectée.</Typography>
+                                <Typography variant="body2" color="text.secondary">Aucune alerte détectée sur cette période.</Typography>
                             </TableCell></TableRow>
                         ) : (
                             alerts.map((row) => (
@@ -116,7 +127,9 @@ export default function AlertsListPanel() {
                                     onClick={() => handleRowClick(row.event_id)}
                                 >
                                     <TableCell sx={{ fontSize: '0.75rem' }}>
-                                        {isMounted ? format(new Date(row.created_at), 'dd/MM HH:mm:ss') : '...'}
+                                        <Typography suppressHydrationWarning variant="inherit">
+                                            {format(new Date(row.created_at), 'dd/MM HH:mm:ss')}
+                                        </Typography>
                                     </TableCell>
                                     <TableCell sx={{ fontWeight: 600 }}>{row.rule_name}</TableCell>
                                     <TableCell>

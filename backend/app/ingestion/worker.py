@@ -31,6 +31,7 @@ from app.services.provider_resolver import ProviderResolver
 from app.services.classification_service import ClassificationService
 from app.services.business_rules import BusinessRuleEngine
 from app.services.pdf_match_service import PdfMatchService
+from app.services.catalog_service import CatalogService
 
 # Phase B1: New Imports
 from app.ingestion.adapters.registry import AdapterRegistry
@@ -613,6 +614,7 @@ async def worker_loop():
 
     last_redis_heartbeat = 0
     parse_times = [] # Keep last 100 parse times for moving average
+    last_catalog_update_day = None
 
     while True:
         poll_run_id = str(uuid.uuid4())[:8]
@@ -639,6 +641,22 @@ async def worker_loop():
 
         # Update Docker healthcheck file
         heartbeat_path.touch()
+
+        # Phase P3: Daily Catalog Update
+        now_dt = datetime.now()
+        current_day = now_dt.date()
+        if last_catalog_update_day != current_day:
+            # On déclenche la mise à jour une fois par jour (idéalement après les gros imports de journée)
+            # Pour le test on peut juste vérifier que le jour a changé
+            logger.info(f"[P3] Changement de jour détecté ({current_day}). Déclenchement de la mise à jour de l'annuaire...")
+            try:
+                # On écrit dans le dossier docs relatif au worker (/app/docs)
+                # Qui correspond à backend/docs sur l'hôte
+                await CatalogService.generate_catalog(docs_dir="docs")
+                last_catalog_update_day = current_day
+                logger.info("[P3] Annuaire mis à jour avec succès.")
+            except Exception as e:
+                logger.error(f"[P3] Erreur lors de la mise à jour automatique de l'annuaire : {e}")
 
         logger.info(f"[METRIC] event=poll_cycle_start run_id={poll_run_id}")
 

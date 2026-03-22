@@ -31,6 +31,9 @@ import { Plus, Trash2, Edit, Play, AlertTriangle, CheckCircle, Clock } from 'luc
 import Layout from '../../../components/Layout';
 
 import { fetchWithAuth } from '../../../lib/api';
+import CodeCatalogPanel from '../../../components/CodeCatalogPanel';
+import { Drawer } from '@mui/material';
+import { BookOpen } from 'lucide-react';
 
 // TYPES
 interface AlertRule {
@@ -106,6 +109,24 @@ export default function RulesPage() {
     const [replayDateFrom, setReplayDateFrom] = useState('');
     const [replayDateTo, setReplayDateTo] = useState('');
     const [replayStats, setReplayStats] = useState<any>(null);
+    const [catalogHelperOpen, setCatalogHelperOpen] = useState(false);
+
+    const handleSelectCatalogCode = (item: any) => {
+        if (!editingRule) return;
+
+        // Priority for match_keyword: canonical_label, then top_message
+        const keyword = item.canonical_label || item.top_message || item.code;
+        
+        // Reliability check for category: must be a known category, not null
+        const category = (item.category && item.category !== 'unknown') ? item.category : undefined;
+
+        setEditingRule({
+            ...editingRule,
+            match_keyword: keyword,
+            match_category: category || editingRule.match_category
+        });
+        setCatalogHelperOpen(false);
+    };
 
     // FETCH
     const fetchRules = async () => {
@@ -466,44 +487,52 @@ export default function RulesPage() {
 
                             {/* --- MODE SIMPLE --- */}
                             {!editingRule?.sequence_enabled && !editingRule?.logic_enabled && (
-                                <Grid container spacing={2}>
-                                    <Grid item xs={12} md={6}>
-                                        <TextField
-                                            label="Match Category"
-                                            fullWidth
+                                <>
+                                    <Box sx={{ mb: 2, display: 'flex', justifyContent: 'flex-end' }}>
+                                        <Button
+                                            variant="outlined"
+                                            color="secondary"
+                                            startIcon={<BookOpen size={16} />}
+                                            onClick={() => setCatalogHelperOpen(true)}
                                             size="small"
-                                            value={editingRule?.match_category || ''}
-                                            onChange={(e) => setEditingRule({ ...editingRule, match_category: e.target.value })}
-                                            placeholder="e.g. security, camera"
-                                        />
+                                        >
+                                            Aide Catalogue (Assistant)
+                                        </Button>
+                                    </Box>
+                                    <Grid container spacing={2}>
+                                        <Grid item xs={12} md={6}>
+                                            <Tooltip title="Catégorie technique de l'événement (ex: intrusion, technique, camera). Filtrage exact sur la donnée structurée.">
+                                                <TextField
+                                                    label="Match Category"
+                                                    fullWidth
+                                                    size="small"
+                                                    value={editingRule?.match_category || ''}
+                                                    onChange={(e) => setEditingRule({ ...editingRule, match_category: e.target.value })}
+                                                    placeholder="e.g. security, camera"
+                                                />
+                                            </Tooltip>
+                                        </Grid>
+                                        <Grid item xs={12} md={6}>
+                                            <Tooltip title="Mot-clé ou Label Canonique à rechercher dans le message. Sensible à la casse selon la config.">
+                                                <TextField
+                                                    label="Match Keyword"
+                                                    fullWidth
+                                                    size="small"
+                                                    value={editingRule?.match_keyword || ''}
+                                                    onChange={(e) => setEditingRule({ ...editingRule, match_keyword: e.target.value })}
+                                                    placeholder="e.g. intrusion"
+                                                />
+                                            </Tooltip>
+                                        </Grid>
+
+                                        <Grid item xs={6}>
+                                            <FormControlLabel
+                                                control={<Switch size="small" checked={editingRule?.is_open_only || false} onChange={(e) => setEditingRule({ ...editingRule, is_open_only: e.target.checked })} />}
+                                                label={<Typography variant="caption">Open Only (Incident)</Typography>}
+                                            />
+                                        </Grid>
                                     </Grid>
-                                    <Grid item xs={12} md={6}>
-                                        <TextField
-                                            label="Match Keyword"
-                                            fullWidth
-                                            size="small"
-                                            value={editingRule?.match_keyword || ''}
-                                            onChange={(e) => setEditingRule({ ...editingRule, match_keyword: e.target.value })}
-                                            placeholder="e.g. intrusion"
-                                        />
-                                    </Grid>
-                                    <Grid item xs={6}>
-                                        <TextField
-                                            label="Sliding Window (Days)"
-                                            type="number"
-                                            fullWidth
-                                            size="small"
-                                            value={editingRule?.sliding_window_days || 0}
-                                            onChange={(e) => setEditingRule({ ...editingRule, sliding_window_days: parseInt(e.target.value) })}
-                                        />
-                                    </Grid>
-                                    <Grid item xs={6}>
-                                        <FormControlLabel
-                                            control={<Switch size="small" checked={editingRule?.is_open_only || false} onChange={(e) => setEditingRule({ ...editingRule, is_open_only: e.target.checked })} />}
-                                            label={<Typography variant="caption">Open Only (Incident)</Typography>}
-                                        />
-                                    </Grid>
-                                </Grid>
+                                </>
                             )}
 
                             {/* --- MODE SEQUENCE --- */}
@@ -572,24 +601,42 @@ export default function RulesPage() {
                                     />
                                 </Grid>
                                 <Grid item xs={6} md={4}>
-                                    <TextField
-                                        label="Min Occurrences"
-                                        type="number"
-                                        size="small"
-                                        fullWidth
-                                        value={editingRule?.frequency_count || 1}
-                                        onChange={(e) => setEditingRule({ ...editingRule, frequency_count: parseInt(e.target.value) })}
-                                    />
+                                    <Tooltip title="Nombre d'occurrences nécessaires pour déclencher l'alerte.">
+                                        <TextField
+                                            label="Min Occurrences"
+                                            type="number"
+                                            size="small"
+                                            fullWidth
+                                            value={editingRule?.frequency_count || 1}
+                                            onChange={(e) => setEditingRule({ ...editingRule, frequency_count: parseInt(e.target.value) })}
+                                        />
+                                    </Tooltip>
                                 </Grid>
                                 <Grid item xs={6} md={4}>
-                                    <TextField
-                                        label="Window (sec)"
-                                        type="number"
-                                        size="small"
-                                        fullWidth
-                                        value={editingRule?.frequency_window || 0}
-                                        onChange={(e) => setEditingRule({ ...editingRule, frequency_window: parseInt(e.target.value) })}
-                                    />
+                                    <Tooltip title="Fenêtre temporelle courte en secondes (B1). 0 = instantané.">
+                                        <TextField
+                                            label="Window (Seconds)"
+                                            type="number"
+                                            size="small"
+                                            fullWidth
+                                            value={editingRule?.frequency_window || 0}
+                                            onChange={(e) => setEditingRule({ ...editingRule, frequency_window: parseInt(e.target.value) })}
+                                            InputProps={{ endAdornment: <Typography variant="caption" color="text.secondary">sec</Typography> }}
+                                        />
+                                    </Tooltip>
+                                </Grid>
+                                <Grid item xs={12} md={4}>
+                                    <Tooltip title="Analyse glissante sur N jours (V3). Prioritaire sur la fenêtre en secondes si > 0.">
+                                        <TextField
+                                            label="Sliding Window (Days)"
+                                            type="number"
+                                            size="small"
+                                            fullWidth
+                                            value={editingRule?.sliding_window_days || 0}
+                                            onChange={(e) => setEditingRule({ ...editingRule, sliding_window_days: parseInt(e.target.value) })}
+                                            InputProps={{ endAdornment: <Typography variant="caption" color="text.secondary">jours</Typography> }}
+                                        />
+                                    </Tooltip>
                                 </Grid>
                                 <Grid item xs={12} md={6}>
                                     <FormControl fullWidth size="small">
@@ -751,6 +798,25 @@ export default function RulesPage() {
                         </Button>
                     </DialogActions>
                 </Dialog>
+
+                {/* CATALOG HELPER DRAWER */}
+                <Drawer
+                    anchor="right"
+                    open={catalogHelperOpen}
+                    onClose={() => setCatalogHelperOpen(false)}
+                    PaperProps={{ sx: { width: { xs: '100%', md: 800 }, p: 0 } }}
+                >
+                    <Box sx={{ p: 2, height: '100%', display: 'flex', flexDirection: 'column' }}>
+                        <Box sx={{ p: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <Typography variant="h6" fontWeight="bold">Assistant Catalogue de Vérité</Typography>
+                            <Button onClick={() => setCatalogHelperOpen(false)}>Fermer</Button>
+                        </Box>
+                        <Divider />
+                        <Box sx={{ flexGrow: 1, overflow: 'hidden' }}>
+                            <CodeCatalogPanel onSelectCode={handleSelectCatalogCode} />
+                        </Box>
+                    </Box>
+                </Drawer>
 
             </Box>
         </Layout >

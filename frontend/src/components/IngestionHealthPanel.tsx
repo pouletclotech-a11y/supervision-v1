@@ -66,6 +66,7 @@ export default function IngestionHealthPanel({ dateFrom, dateTo }: IngestionHeal
     }, []);
 
     const fetchData = async () => {
+        if (!dateFrom || !dateTo) return;
         setLoading(true);
         try {
             const res = await fetchWithAuth(`/health/ingestion?date_from=${dateFrom}&date_to=${dateTo}`);
@@ -255,7 +256,7 @@ export default function IngestionHealthPanel({ dateFrom, dateTo }: IngestionHeal
             {dailyReceipt.length > 0 && (
                 <Box sx={{ mt: 2, pt: 2, borderTop: '1px solid', borderColor: 'divider' }}>
                     <Typography variant="caption" color="text.secondary" fontWeight={700} sx={{ display: 'block', mb: 1, textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                        Reçus / Attendus aujourd'hui
+                        {dateFrom === dateTo ? "Reçus / Objectif à cet instant" : "Reçus / Objectifs sur la période"}
                     </Typography>
                     <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
                         {dailyReceipt.map((r) => {

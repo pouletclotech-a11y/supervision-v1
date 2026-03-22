@@ -28,6 +28,7 @@ import { FileText, AlertTriangle, CheckCircle, Search, RefreshCw, XCircle, Filte
 import Layout from '../../../components/Layout';
 
 import { fetchWithAuth } from '../../../lib/api';
+import { format } from 'date-fns';
 import RuleTester from '../../../components/RuleTester';
 
 // Phase 3: Connection Stats Types
@@ -339,7 +340,11 @@ function DataValidationInner() {
                 try {
                     const date = new Date(params.value);
                     if (isNaN(date.getTime())) return <Typography variant="caption" color="error">Invalid Date</Typography>;
-                    return <Typography suppressHydrationWarning sx={{ fontSize: 12 }}>{date.toLocaleString()}</Typography>;
+                    return (
+                        <Typography suppressHydrationWarning variant="body2" sx={{ fontSize: 12 }}>
+                            {format(date, 'dd/MM/yyyy HH:mm:ss')}
+                        </Typography>
+                    );
                 } catch (e) {
                     return <Typography variant="caption" color="error">Error</Typography>;
                 }
@@ -415,10 +420,7 @@ function DataValidationInner() {
                     if (isNaN(date.getTime())) return <Typography variant="caption" color="error" sx={{ fontSize: 11 }}>Invalid Date</Typography>;
                     return (
                         <Typography suppressHydrationWarning sx={{ fontSize: 11, fontWeight: 'medium' }}>
-                            {date.toLocaleString('fr-FR', { 
-                                day: '2-digit', month: '2-digit', year: 'numeric', 
-                                hour: '2-digit', minute: '2-digit', second: '2-digit' 
-                            })}
+                            {format(date, 'dd/MM/yyyy HH:mm:ss')}
                         </Typography>
                     );
                 } catch (e) {

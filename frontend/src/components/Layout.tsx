@@ -61,6 +61,7 @@ export default function Layout({ children }: LayoutProps) {
         { text: 'Validations', icon: <FileText size={20} />, path: '/admin/data-validation' },
         { text: 'Alerts', icon: <ShieldAlert size={20} />, path: '/admin/alerts' },
         { text: 'Providers', icon: <Zap size={20} />, path: '/admin/providers', roles: ['ADMIN', 'SUPER_ADMIN'] },
+        { text: 'Annuaire', icon: <FileText size={20} />, path: '/admin/catalog', roles: ['ADMIN', 'SUPER_ADMIN'] },
         { text: 'Calibration', icon: <Database size={20} />, path: '/admin/calibration', roles: ['ADMIN', 'SUPER_ADMIN'] },
         { text: 'Imports', icon: <Database size={20} />, path: '/admin/imports', roles: ['ADMIN', 'OPERATOR', 'SUPER_ADMIN'] },
         { text: 'Users', icon: <Users size={20} />, path: '/admin/users', roles: ['ADMIN', 'SUPER_ADMIN'] },

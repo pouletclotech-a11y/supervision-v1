@@ -96,7 +96,11 @@ export default function RuleTriggerPanel({ dateFrom, dateTo }: RuleTriggerPanelP
     const fetchDrilldown = async (ruleId: number, page: number = 1) => {
         setDrilldownLoading(true);
         try {
-            const res = await fetchWithAuth(`/rules/${ruleId}/events?page=${page}&limit=20`);
+            let url = `/rules/${ruleId}/events?page=${page}&limit=20`;
+            if (dateFrom) url += `&date_from=${dateFrom}`;
+            if (dateTo) url += `&date_to=${dateTo}`;
+            
+            const res = await fetchWithAuth(url);
             if (res.ok) {
                 const json = await res.json();
                 setDrilldownData(json.items || []);
@@ -222,9 +226,9 @@ export default function RuleTriggerPanel({ dateFrom, dateTo }: RuleTriggerPanelP
                                         <Typography variant="body2">{row.distinct_sites}</Typography>
                                     </TableCell>
                                     <TableCell align="center">
-                                        <Tooltip title={isMounted ? new Date(row.last_trigger_at).toLocaleString() : ''}>
-                                            <Typography variant="caption">
-                                                {isMounted ? new Date(row.last_trigger_at).toLocaleTimeString() : '...'}
+                                        <Tooltip title={new Date(row.last_trigger_at).toLocaleString()}>
+                                            <Typography suppressHydrationWarning variant="caption">
+                                                {new Date(row.last_trigger_at).toLocaleTimeString()}
                                             </Typography>
                                         </Tooltip>
                                     </TableCell>
@@ -274,7 +278,9 @@ export default function RuleTriggerPanel({ dateFrom, dateTo }: RuleTriggerPanelP
                                     {drilldownData.map((item) => (
                                         <TableRow key={item.id} hover onClick={() => handleEventClick(item.id)} sx={{ cursor: 'pointer' }}>
                                             <TableCell sx={{ fontSize: '0.75rem', whiteSpace: 'nowrap' }}>
-                                                {isMounted ? format(new Date(item.matched_at), 'dd/MM HH:mm:ss') : '...'}
+                                                <Typography suppressHydrationWarning variant="inherit">
+                                                    {format(new Date(item.matched_at), 'dd/MM HH:mm:ss')}
+                                                </Typography>
                                             </TableCell>
                                             <TableCell>
                                                 <Typography 

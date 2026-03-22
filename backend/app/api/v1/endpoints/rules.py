@@ -59,24 +59,43 @@ class ActiveRuleOut(BaseModel):
     class Config:
         from_attributes = True
 
+# New Pydantic model for the updated /trigger-summary endpoint
+class AlertReportOut(BaseModel):
+    rule_id: int
+    rule_name: str
+    provider_id: Optional[int]
+    provider_label: str
+    total_triggers: int
+    distinct_sites: int
+    last_trigger_at: datetime
+    health_status: str
 
-@router.get("/trigger-summary", response_model=Dict[str, Any])
+
+@router.get("/trigger-summary", response_model=RuleTriggerSummary)
 async def get_rule_trigger_summary(
-    date_from: date = Query(default_factory=date.today),
-    date_to: Optional[date] = Query(None),
+    date_from: Optional[str] = Query(None),
+    date_to: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db)
 ) -> Any:
     """
-    Get a summary of rule triggers for a specific date range.
+    Get a summary of triggered rules across providers for a date range.
     """
-    repo = EventRepository(db)
-    
-    start_dt = datetime.combine(date_from, datetime.min.time())
-    if date_to:
-        end_dt = datetime.combine(date_to, datetime.min.time()) + timedelta(days=1)
-    else:
-        end_dt = start_dt + timedelta(days=1)
+    def parse_date(d_str: Optional[str], default_val: date) -> date:
+        if not d_str: return default_val
+        try:
+            return date.fromisoformat(d_str)
+        except:
+            return default_val
 
+    d_from = parse_date(date_from, date.today())
+    d_to = parse_date(date_to, d_from)
+
+    repo = EventRepository(db)
+    start_dt = datetime.combine(d_from, datetime.min.time())
+    end_dt = datetime.combine(d_to, datetime.min.time()) + timedelta(days=1)
+    
+    # The repository method is now expected to return a list of AlertReportOut
+    # with health_status already calculated.
     raw_summary = await repo.get_rule_trigger_summary(start_dt, end_dt)
 
     from app.core.config_loader import app_config
@@ -98,7 +117,7 @@ async def get_rule_trigger_summary(
     processed_summary.sort(key=lambda x: x["total_triggers"], reverse=True)
 
     return {
-        "date": date_from,
+        "date": d_from,
         "summary": processed_summary
     }
 
@@ -165,13 +184,27 @@ async def get_rule_hits_drilldown(
     rule_id: int,
     page: int = Query(1, ge=1),
     limit: int = Query(50, ge=1, le=100),
+    date_from: Optional[date] = Query(None),
+    date_to: Optional[date] = Query(None),
     db: AsyncSession = Depends(get_db)
 ) -> Any:
     """
     Drill-down: Get detailed event information for rule monitoring hits.
     """
     repo = EventRepository(db)
-    items, total = await repo.get_events_for_rule(rule_id, page, limit)
+    
+    start_dt = None
+    if date_from:
+        start_dt = datetime.combine(date_from, datetime.min.time())
+        
+    end_dt = None
+    if date_to:
+        end_dt = datetime.combine(date_to, datetime.min.time()) + timedelta(days=1)
+        
+    items, total = await repo.get_events_for_rule(
+        rule_id, page, limit, 
+        start_date=start_dt, end_date=end_dt
+    )
     
     return {
         "items": [

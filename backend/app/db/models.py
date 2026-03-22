@@ -51,7 +51,7 @@ class Event(Base):
     weekday_label: Mapped[Optional[str]] = mapped_column(String(20))
     raw_message: Mapped[Optional[str]] = mapped_column(Text)
     normalized_message: Mapped[Optional[str]] = mapped_column(Text, index=True)
-    raw_code: Mapped[Optional[str]] = mapped_column(String(50))
+    raw_code: Mapped[Optional[str]] = mapped_column(String(50), index=True)
     normalized_code: Mapped[Optional[str]] = mapped_column(String(50), index=True)
     normalized_type: Mapped[Optional[str]] = mapped_column(String(100), index=True)
     sub_type: Mapped[Optional[str]] = mapped_column(String(50))
@@ -72,6 +72,7 @@ class Event(Base):
         Index('ix_events_site_time', 'site_code', 'time'),
         Index('ix_events_site_severity_time', 'site_code', 'severity', 'time'),
         Index('ix_events_site_type_time', 'site_code', 'normalized_type', 'time'),
+        Index('ix_events_raw_code_time', 'raw_code', 'time'),
     )
 
 class ImportLog(Base):
@@ -346,6 +347,12 @@ class Incident(Base):
     duration_seconds: Mapped[Optional[int]] = mapped_column(Integer)
     open_event_id: Mapped[Optional[int]] = mapped_column(BigInteger)
     close_event_id: Mapped[Optional[int]] = mapped_column(BigInteger)
+    
+    # Phase 2: Manual Acknowledgment
+    acknowledged_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    acknowledged_by: Mapped[Optional[str]] = mapped_column(String(255))
+    ack_comment: Mapped[Optional[str]] = mapped_column(Text)
+
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     

@@ -28,7 +28,10 @@ interface EventDetailDrawerProps {
 export default function EventDetailDrawer({ eventId, open, onClose }: EventDetailDrawerProps) {
     const [loading, setLoading] = useState(false);
     const [event, setEvent] = useState<any>(null);
+    const [context, setContext] = useState<any[]>([]);
+    const [loadingContext, setLoadingContext] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [showContext, setShowContext] = useState(false);
 
     const [isMounted, setIsMounted] = useState(false);
     useEffect(() => {
@@ -38,6 +41,7 @@ export default function EventDetailDrawer({ eventId, open, onClose }: EventDetai
     useEffect(() => {
         if (open && eventId) {
             fetchEventDetails();
+            setShowContext(false);
         }
     }, [open, eventId]);
 
@@ -53,6 +57,23 @@ export default function EventDetailDrawer({ eventId, open, onClose }: EventDetai
             setError(err.message);
         } finally {
             setLoading(false);
+        }
+    };
+
+    const fetchContext = async () => {
+        if (!eventId) return;
+        setLoadingContext(true);
+        try {
+            const res = await fetchWithAuth(`/events/${eventId}/context?window_minutes=10`);
+            if (res.ok) {
+                const json = await res.json();
+                setContext(json);
+                setShowContext(true);
+            }
+        } catch (err) {
+            console.error("Fetch context error:", err);
+        } finally {
+            setLoadingContext(false);
         }
     };
 
@@ -114,6 +135,17 @@ export default function EventDetailDrawer({ eventId, open, onClose }: EventDetai
                     {/* ACTIONS */}
                     <Box sx={{ display: 'flex', gap: 2 }}>
                         <Button
+                            variant="contained"
+                            fullWidth
+                            size="small"
+                            startIcon={loadingContext ? <CircularProgress size={16} color="inherit" /> : <Clock size={16} />}
+                            onClick={fetchContext}
+                            disabled={loadingContext}
+                            sx={{ bgcolor: 'secondary.main', '&:hover': { bgcolor: 'secondary.dark' } }}
+                        >
+                            {showContext ? "Actualiser le Contexte" : "Voir le Contexte (±10m)"}
+                        </Button>
+                        <Button
                             component={Link}
                             href={`/client/${event.site_code}`}
                             variant="outlined"
@@ -134,6 +166,44 @@ export default function EventDetailDrawer({ eventId, open, onClose }: EventDetai
                             Voir Import
                         </Button>
                     </Box>
+
+                    {/* CONTEXT TIMELINE */}
+                    {showContext && (
+                        <Box sx={{ mt: 1, p: 2, bgcolor: 'background.paper', border: '1px solid', borderColor: 'secondary.light', borderRadius: 2 }}>
+                            <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 2, color: 'secondary.main', display: 'flex', alignItems: 'center', gap: 1 }}>
+                                <Clock size={16} /> Chronologie (±10 minutes)
+                            </Typography>
+                            <Stack spacing={1}>
+                                {context.map((ctxEvt: any) => (
+                                    <Box 
+                                        key={ctxEvt.id} 
+                                        sx={{ 
+                                            p: 1, 
+                                            borderRadius: 1, 
+                                            bgcolor: ctxEvt.id === eventId ? 'rgba(255, 0, 0, 0.1)' : 'transparent',
+                                            borderLeft: '3px solid',
+                                            borderColor: ctxEvt.id === eventId ? 'error.main' : 'divider',
+                                            display: 'flex',
+                                            flexDirection: 'column',
+                                            gap: 0.5
+                                        }}
+                                    >
+                                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                            <Typography variant="caption" fontWeight={ctxEvt.id === eventId ? 800 : 400}>
+                                                {isMounted ? format(new Date(ctxEvt.time), 'HH:mm:ss') : '...'}
+                                            </Typography>
+                                            {ctxEvt.triggered_rules?.length > 0 && (
+                                                <Chip label="ALERTE" size="small" color="error" sx={{ height: 16, fontSize: '0.6rem' }} />
+                                            )}
+                                        </Box>
+                                        <Typography variant="caption" sx={{ wordBreak: 'break-all', opacity: ctxEvt.id === eventId ? 1 : 0.7 }}>
+                                            {ctxEvt.message}
+                                        </Typography>
+                                    </Box>
+                                ))}
+                            </Stack>
+                        </Box>
+                    )}
 
                     {/* MESSAGES */}
                     <Box>

@@ -22,10 +22,14 @@ class IncidentService:
         msg = raw_message.upper().strip()
         msg = re.sub(r'\s+', ' ', msg)
         
-        # 2. Strip operator markers (Case insensitive check via upper)
-        # We strip common patterns like Cam 1, Cam. 2, NVF, etc.
+        # 2. Strip operator markers and state words
         msg = re.sub(r'CAM\s*\d+', '', msg)
         msg = re.sub(r'NVF', '', msg)
+        
+        # Strip status prefixes often found in logs (APPARITION, DISPARITION, etc.)
+        msg = re.sub(r'^(APPARITION|DISPARITION|RESTAURATION|ALARME|DEF\.|RETOUR)\b', '', msg)
+        # Also strip separators like "|" or ":" if they appear at start after stripping
+        msg = re.sub(r'^[|\s:-]+', '', msg)
         
         # 3. Final cleanup after replacement
         msg = msg.strip()

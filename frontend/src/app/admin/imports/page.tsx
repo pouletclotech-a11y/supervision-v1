@@ -1,9 +1,10 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Layout from '../../../components/Layout';
 import { fetchWithAuth, API_ORIGIN } from '@/lib/api';
+import { format } from 'date-fns';
 import {
     Box,
     Paper,
@@ -43,7 +44,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../../context/AuthContext';
 
-export default function ImportsPage() {
+function ImportsPageContent() {
     const { user } = useAuth();
     const router = useRouter();
     const searchParams = useSearchParams();
@@ -200,7 +201,9 @@ export default function ImportsPage() {
                                 </TableRow>
                             ) : imports.map((imp: any) => (
                                 <TableRow key={imp.id} hover>
-                                    <TableCell>{isMounted ? new Date(imp.created_at).toLocaleString() : '...'}</TableCell>
+                                    <TableCell suppressHydrationWarning>
+                                        {format(new Date(imp.created_at), 'dd/MM/yyyy HH:mm:ss')}
+                                    </TableCell>
                                     <TableCell sx={{ fontWeight: 500 }}>{imp.filename}</TableCell>
                                     <TableCell>
                                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -335,6 +338,19 @@ export default function ImportsPage() {
                 </Drawer>
             </Box>
         </Layout>
+    );
+}
+
+export default function ImportsPage() {
+    return (
+        <Suspense fallback={
+            <Box sx={{ p: 4, textAlign: 'center' }}>
+                <CircularProgress size={40} />
+                <Typography sx={{ mt: 2 }} color="text.secondary">Loading Imports Inspector...</Typography>
+            </Box>
+        }>
+            <ImportsPageContent />
+        </Suspense>
     );
 }
 

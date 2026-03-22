@@ -163,10 +163,11 @@ class AlertRuleOut(AlertRuleBase):
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
 class AlertOut(BaseModel):
     rule_name: str
     status: str # ACTIVE | ARCHIVED
-    site_code: str
+    site_code: Optional[str] = None
     provider_code: Optional[str] = None
     first_seen: datetime
     last_seen: datetime
@@ -177,7 +178,7 @@ class AlertOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 class ClientReportOut(BaseModel):
-    site_code: str
+    site_code: Optional[str] = None
     provider: Optional[str] = None
     summary: dict # total_events, total_alerts, active_alerts, archived_alerts
     alerts: List[AlertOut]
@@ -193,7 +194,7 @@ class AlertListItem(BaseModel):
     rule_name: str
     score: Optional[float] = None
     created_at: datetime
-    site_code: str
+    site_code: Optional[str] = None
     client_name: Optional[str] = None
     provider_name: Optional[str] = None
     event_id: int
@@ -249,6 +250,29 @@ class ClientSiteSummaryOut(BaseModel):
     timeline: SiteTimeline
 
     model_config = ConfigDict(from_attributes=True)
+
+class IncidentOut(BaseModel):
+    id: int
+    site_code: str
+    incident_key: str
+    label: Optional[str] = None
+    opened_at: datetime
+    closed_at: Optional[datetime] = None
+    status: str
+    duration_seconds: Optional[int] = None
+    open_event_id: Optional[int] = None
+    close_event_id: Optional[int] = None
+    
+    # Phase 2: Manual Acknowledgment
+    acknowledged_at: Optional[datetime] = None
+    acknowledged_by: Optional[str] = None
+    ack_comment: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+class IncidentAck(BaseModel):
+    comment: str = Field(..., min_length=1)
+
 class ReplayResult(BaseModel):
     status: str
     mode: str

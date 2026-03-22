@@ -3,7 +3,7 @@
 Ce document recense les heures investies dans la conception, le développement et la sécurisation de la plateforme **Supervision-V1**.
 
 ## Résumé
-- **Dernière mise à jour** : 2026-03-05
+- **Dernière mise à jour** : 2026-03-21
 
 ---
 
@@ -23,6 +23,9 @@ Ce document recense les heures investies dans la conception, le développement e
 | **Phase 8 (Stability)** | Logic Regression & Schema Hardening (500/CORS Fixes). | 5h | **TERMINÉ** |
 | **Phase 9 (Inspect)** | Inspection NaN-safe & Test Ingest multi-provider. | 4h | **TERMINÉ** |
 | **Phase 10 (Replay)** | Rule Replay Stability & Performance (Cache settings). | 3h | **TERMINÉ** |
+| **Phase 11 (Catalog V4)** | Optimisation SQL & Durcissement logique "Vérité" (100% invariant). | 4h | **TERMINÉ** |
+| **Phase 1 (Synthèse)** | Invariance Slider, Token Split, Log Context (±10m), Intrusion Counter, Persistent Alerts. | 8h | **TERMINÉ** |
+| **Phase 2 (Ack)** | Workflow d'acquittement manuel avec justification, opérateur et traçabilité AuditLog. | 4h | **TERMINÉ** |
 | **Refactors & Debug** | Refonte UI, corrections de schémas DB, optimisation des requêtes, gestion des erreurs. | 25h | Continu |
 
 ---
@@ -42,6 +45,65 @@ Ce document recense les heures investies dans la conception, le développement e
 ---
 
 ## 2. Historique des Ajouts
+
+### 2026-03-22 — Phase 2 — Workflow d'Acquittement & Audit [+4h]
+- **Status**: DONE (Mar 22, 2026)
+- **Description**: Ajout de la capacité d'acquittement manuel des incidents pour les opérateurs.
+- **Key Contributions**:
+    - **Backend** : Migration DB (colonnes `acknowledged_*`), endpoint `/ack` et intégration `AuditLog`.
+    - **Frontend** : Dialogue d'acquittement avec justificatif obligatoire dans `ActiveIncidentsPanel`.
+    - **Traçabilité** : Enregistrement automatique de l'opérateur, date/heure et commentaire.
+- **Validation** : Script `verify_ack_logic.py` validé (Open -> Ack -> Auto-Close).
+
+### 2026-03-22 — Phase 1 — Synthèse Chantiers & Stabilisation [+8h]
+- **Status**: DONE (Mar 22, 2026)
+- **Description**: Implémentation complète de la phase demandée par Sébastien pour améliorer le catalogue, le contexte et le suivi des alertes.
+- **Key Contributions**:
+    - **Catalogue** : Slider d'invariance (50-100%) et affichage de la distribution des tokens.
+    - **Contexte** : Visualisation temporelle ±10 min pour chaque événement/alerte.
+    - **Dashboard** : Compteur de sites distincts en intrusion et panel d'alertes persistantes (Incidents).
+    - **Backend** : Service d'incidents (Apparition/Disparition) avec normalisation des clés pour la clôture automatique.
+- **Validation** : Test script global validé dans le container (Ouverture/Fermeture). Vérification des endpoints `/context` et `/incidents`.
+
+### 2026-03-21 — Phase 11 — Optimisation & Durcissement Catalogue V4 [+4h]
+- **Status**: DONE (Mar 21, 2026)
+- **Description**: Résolution des timeouts catalogue et durcissement de la logique de génération des labels (Règle 100% Sébastien).
+- **Key Contributions**:
+    - Indexation SQL sur `events.raw_code` (Gain performance 5x).
+    - Refonte de `get_canonical_label` (100% invariance, exclusion des mots d'état comme "APPARITION").
+    - Correction du label `$0001` (Nucleus vide -> Fallback sur le CODE propre).
+- **Validation**: Vérification par subagent browser (Loading ~12s, labels $0001/$710 validés).
+
+### 2026-03-20 — Annuaire V3 & Planification "Catalogue de Vérité" [+5h]
+- **Status**: DONE (Mar 20, 2026)
+- **Description**: Finalisation du module Annuaire (Pagination, Actions) et conception du Catalogue de Vérité V4.
+- **Key Contributions**:
+    - Implémentation du module UI interactif avec pagination et colonne "TYPE(S) ACTION".
+    - Bugfix SQL (`GROUP BY` correct) et UI (`Tooltip` wrapper `<span>`).
+    - Audit technique du moteur de règles (`match_category`, `ast_logic`, `window_sec`).
+    - Conception de l'algorithme "Canonical Label" par extraction de tokens invariants (seuil 90%).
+- **Validation**: Vérification par subagent (Screenshots validés).
+
+### 2026-03-20 — Phase 3 — Assistant Catalogue & Aide aux Règles [+3h]
+- **Status**: DONE (Mar 20, 2026)
+- **Description**: Intégration du Catalogue V4 comme assistant contextuel dans l'éditeur de règles.
+- **Key Contributions**:
+    - Bouton "Aide Catalogue" déclenchant un Drawer latéral.
+    - Injection automatique du triplet `code`/`label`/`category` dans le formulaire de règle.
+    - Ajout de tooltips explicatifs sur les champs techniques (`match_category`, `match_keyword`).
+    - Unités temporelles explicites (`sec`, `jours`) sur les fenêtres de fréquence.
+- **Validation**: Vérification de la structure JSX et de la présence du code assistant.
+
+### 2026-03-19 — Audit Technique Moteur de Règles & Documentation [+4h]
+- **Status**: DONE (Mar 19, 2026)
+- **Description**: Audit complet du moteur de règles (Simple, Sequence, AST) et production de la documentation utilisateur.
+- **Key Contributions**:
+    - Identification du mapping réel des champs de règle (`match_category` -> `category`, `match_keyword` -> `normalized_message`).
+    - Analyse du comportement des fenêtres temporelles (`window_sec=0` / `max_delay=0`).
+    - Vérification de l'état (inactif) de l'alerte email.
+    - Établissement du plan de passage aux "Alertes Persistantes" (Apparition/Disparition).
+    - Création de la notice utilisateur `documentation_alertes.md`.
+- **Validation**: Vérification croisée entre `alerting.py`, `business_rules.py` et `repository.py`.
 
 ### 2026-03-06 — Phase 11 — Attachment Grouping & PDF Security [+6h]
 - **Status**: DONE (Mar 06, 2026)
@@ -81,4 +143,6 @@ Ce document recense les heures investies dans la conception, le développement e
 
 [... Historique Troncqué ...]
 
-**Total cumulé** : 354 heures
+---
+
+**Total cumulé** : 386 heures

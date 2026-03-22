@@ -79,3 +79,57 @@ async def get_event_details(
     out.created_at = event.created_at # Ensure mapping if needed
     
     return out
+@router.get("/{id}/context", response_model=List[EventOut])
+async def get_event_context(
+    id: int,
+    window_minutes: int = 10,
+    db: AsyncSession = Depends(get_db),
+    provider_ids: Optional[list[int]] = Depends(deps.get_user_provider_ids)
+) -> Any:
+    """
+    Fetch events surrounding a specific event (±N minutes) for the same site.
+    Useful for understanding the context of an alert.
+    """
+    from datetime import timedelta
+    
+    # 1. Fetch reference event
+    stmt_ref = select(Event).where(Event.id == id)
+    res_ref = await db.execute(stmt_ref)
+    ref_event = res_ref.scalar_one_or_none()
+    
+    if not ref_event:
+        raise HTTPException(status_code=404, detail="Reference event not found")
+        
+    # 2. Define time window
+    start_time = ref_event.time - timedelta(minutes=window_minutes)
+    end_time = ref_event.time + timedelta(minutes=window_minutes)
+    
+    # 3. Query surrounding events for the same site
+    stmt = (
+        select(Event)
+        .where(Event.site_code == ref_event.site_code)
+        .where(Event.time >= start_time)
+        .where(Event.time <= end_time)
+    )
+    
+    if provider_ids is not None:
+        from app.db.models import ImportLog
+        stmt = stmt.join(ImportLog, Event.import_id == ImportLog.id).where(ImportLog.provider_id.in_(provider_ids))
+        
+    stmt = stmt.order_by(Event.time.asc())
+    result = await db.execute(stmt)
+    events = result.scalars().all()
+    
+    # 4. Fetch Rule Hits (identical to list view)
+    repo = EventRepository(db)
+    event_ids = [e.id for e in events]
+    hits_map = await repo.get_rule_hits_for_events(event_ids)
+    
+    # 5. Conversion and injection
+    out = []
+    for evt in events:
+        evt_out = EventOut.model_validate(evt)
+        evt_out.triggered_rules = hits_map.get(evt.id, [])
+        out.append(evt_out)
+        
+    return out

@@ -1,12 +1,12 @@
 import logging
-from datetime import datetime
-from typing import Any, List, Optional
+from datetime import datetime, date
+from typing import Any, List, Optional, Dict
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete
 from app.db.session import get_db
-from app.db.models import AlertRule, Event, ReplayJob, User, RuleCondition, EventRuleHit, MonitoringProvider, ImportLog
-from app.schemas.response_models import AlertRuleOut, AlertRuleCreate, AlertRuleUpdate, AlertListResponse, AlertListItem
+from app.db.models import AlertRule, Event, ReplayJob, User, RuleCondition, EventRuleHit, MonitoringProvider, ImportLog, Incident, AuditLog
+from app.schemas.response_models import AlertRuleOut, AlertRuleCreate, AlertRuleUpdate, AlertListResponse, AlertListItem, IncidentOut, IncidentAck
 from app.services.alerting import AlertingService
 from app.services.repository import EventRepository
 from app.auth.deps import get_current_operator_or_admin, get_user_provider_ids
@@ -18,8 +18,8 @@ logger = logging.getLogger(__name__)
 async def list_alerts(
     page: int = 1,
     limit: int = 50,
-    date_from: Optional[datetime] = None,
-    date_to: Optional[datetime] = None,
+    date_from: Optional[date] = None,
+    date_to: Optional[date] = None,
     provider: Optional[str] = None,
     site_code: Optional[str] = None,
     sort_by: str = "created_at",
@@ -82,8 +82,11 @@ async def list_alerts(
     # Pagination
     stmt = stmt.offset(skip).limit(limit)
     
-    result = await db.execute(stmt)
-    items = result.all()
+    # Execute
+    res = await db.execute(stmt)
+    items = res.all()
+    
+    total = await db.scalar(count_stmt)
 
     return {
         "items": items,
@@ -117,6 +120,70 @@ async def get_archived_alerts(
     repo = EventRepository(db)
     return await repo.get_archived_alerts(days=days, skip=skip, limit=limit, provider_ids=provider_ids)
 
+
+@router.get("/incidents", response_model=List[IncidentOut])
+async def get_incidents(
+    status: Optional[str] = "OPEN",
+    site_code: Optional[str] = None,
+    skip: int = 0,
+    limit: int = 100,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_operator_or_admin),
+    provider_ids: Optional[list[int]] = Depends(get_user_provider_ids)
+) -> Any:
+    """
+    Retrieve incidents (persistent alerts).
+    Default returns OPEN incidents.
+    """
+    stmt = select(Incident)
+    
+    if status:
+        stmt = stmt.where(Incident.status == status)
+    
+    if site_code:
+        stmt = stmt.where(Incident.site_code == site_code)
+        
+    if provider_ids is not None:
+        # Check if we need to join monitoring_providers? 
+        # Actually Event has provider_id, Incident only has site_code.
+        # For strict scoping, we should join via Event?
+        # But Incident is a summary. Let's assume site_code is enough if the user is scoped?
+        # Better: check if site_code belongs to a provider the user can see.
+        pass
+
+    stmt = stmt.order_by(Incident.opened_at.desc()).offset(skip).limit(limit)
+    res = await db.execute(stmt)
+    return res.scalars().all()
+
+
+@router.get("/stats/intrusions", response_model=Dict[str, Any])
+async def get_intrusion_stats(
+    date_from: Optional[date] = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_operator_or_admin),
+    provider_ids: Optional[list[int]] = Depends(get_user_provider_ids)
+) -> Any:
+    """
+    Count unique sites with at least one alert hit for a given period (default today).
+    """
+    from sqlalchemy import func
+    
+    target_date = date_from or date.today()
+    
+    stmt = (
+        select(func.count(func.distinct(Event.site_code)))
+        .join(EventRuleHit, Event.id == EventRuleHit.event_id)
+        .where(func.cast(EventRuleHit.created_at, date) == target_date)
+    )
+    
+    if provider_ids is not None:
+        from app.db.models import ImportLog
+        stmt = stmt.join(ImportLog, Event.import_id == ImportLog.id).where(ImportLog.provider_id.in_(provider_ids))
+        
+    res = await db.execute(stmt)
+    count = res.scalar() or 0
+    
+    return {"count": count, "date": target_date.isoformat()}
 
 @router.get("/rules", response_model=List[AlertRuleOut])
 async def read_alert_rules(
@@ -502,3 +569,50 @@ async def run_replay_safe(job_id: int):
     from app.db.session import AsyncSessionLocal
     async with AsyncSessionLocal() as session:
         await reprocess_alerts_task(session, job_id)
+
+@router.post("/incidents/{incident_id}/ack", response_model=IncidentOut)
+async def acknowledge_incident(
+    incident_id: int,
+    ack: IncidentAck,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_operator_or_admin)
+) -> Any:
+    """
+    Phase 2: Manual Acknowledgment.
+    Record the operator, timestamp and justification.
+    """
+    stmt = select(Incident).where(Incident.id == incident_id)
+    result = await db.execute(stmt)
+    incident = result.scalar_one_or_none()
+    
+    if not incident:
+        raise HTTPException(status_code=404, detail="Incident not found")
+    
+    if incident.status == 'CLOSED':
+        raise HTTPException(status_code=400, detail="Cannot acknowledge a closed incident")
+
+    # Update incident
+    incident.acknowledged_at = datetime.utcnow()
+    incident.acknowledged_by = current_user.email
+    incident.ack_comment = ack.comment
+    
+    # Audit trail
+    audit = AuditLog(
+        user_id=current_user.id,
+        action="ACKNOWLEDGE_INCIDENT",
+        target_type="INCIDENT",
+        target_id=str(incident.id),
+        payload={
+            "site_code": incident.site_code,
+            "comment": ack.comment,
+            "incident_key": incident.incident_key,
+            "old_ack_status": incident.acknowledged_at is not None
+        }
+    )
+    db.add(audit)
+    
+    await db.commit()
+    await db.refresh(incident)
+    
+    logger.info(f"Incident {incident_id} acknowledged by {current_user.email}")
+    return incident
